@@ -270,6 +270,7 @@ struct SpirvTarget {
     bool vertexSubgroups = true;
     bool float16DenormPreserve = false;
     bool spannedWaves = false;
+    bool fragmentBarycentricBuiltins = false;
 };
 
 struct BindingLayout {
