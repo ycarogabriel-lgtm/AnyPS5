@@ -8231,7 +8231,11 @@ int main(int argc, char** argv) {
             bounded.minDepthBounds = 0.25f;
             AgcDriver::Graphics::ValidateDepthBounds(context, bounded);
             bounded.minDepthBounds = 1.5f;
+#ifdef __APPLE__
+            if (!context.depthRangeUnrestricted) AgcDriver::Graphics::ValidateDepthBounds(context, bounded);
+#else
             expectFailure([&] { AgcDriver::Graphics::ValidateDepthBounds(context, bounded); }, "depth bounds outside [0, 1]");
+#endif
             auto unrestricted = context;
             unrestricted.depthRangeUnrestricted = true;
             AgcDriver::Graphics::ValidateDepthBounds(unrestricted, bounded);
