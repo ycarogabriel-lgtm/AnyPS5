@@ -92,7 +92,35 @@ Framebuffer::~Framebuffer() {
     if (framebuffer) context.Function<PFN_vkDestroyFramebuffer>("vkDestroyFramebuffer")(context.device, framebuffer, nullptr);
 }
 
+bool ClampsDepthRange(const Context& context) {
+#ifdef __APPLE__
+    return !context.depthRangeUnrestricted;
+#else
+    static_cast<void>(context);
+    return false;
+#endif
+}
+
+void ReportClampedDepth(const char* what, float low, float high) {
+    static std::once_flag reported;
+    std::call_once(reported, [&] { std::fprintf(stderr, "[gpu] %s [%f, %f] is clamped to [0, 1]: the device lacks VK_EXT_depth_range_unrestricted\n", what, low, high); });
+}
+
+float DeviceDepth(const Context& context, float depth) {
+    return ClampsDepthRange(context) ? std::clamp(depth, 0.0f, 1.0f) : depth;
+}
+
+VkViewport DeviceViewport(const Context& context, VkViewport viewport) {
+    viewport.minDepth = DeviceDepth(context, viewport.minDepth);
+    viewport.maxDepth = DeviceDepth(context, viewport.maxDepth);
+    return viewport;
+}
+
 void ValidateDepthBounds(const Context& context, const State& state) {
+    if (ClampsDepthRange(context) && state.depthBoundsTest && (state.minDepthBounds < 0.0f || state.minDepthBounds > 1.0f || state.maxDepthBounds < 0.0f || state.maxDepthBounds > 1.0f)) {
+        ReportClampedDepth("depth bounds", state.minDepthBounds, state.maxDepthBounds);
+        return;
+    }
     Require(!state.depthBoundsTest || context.depthRangeUnrestricted || (state.minDepthBounds >= 0.0f && state.minDepthBounds <= 1.0f && state.maxDepthBounds >= 0.0f && state.maxDepthBounds <= 1.0f), "depth bounds outside [0, 1] require VK_EXT_depth_range_unrestricted");
 }
 
@@ -172,7 +200,8 @@ bool ValidateSampleLocations(const Context& context, const State& state) {
 
 void ValidateViewport(const Context& context, const VkViewport& viewport) {
     Require(std::isfinite(viewport.minDepth) && std::isfinite(viewport.maxDepth), "non-finite viewport depth range");
-    Require(context.depthRangeUnrestricted || (viewport.minDepth >= 0 && viewport.minDepth <= 1 && viewport.maxDepth >= 0 && viewport.maxDepth <= 1), "viewport depth outside [0, 1] requires VK_EXT_depth_range_unrestricted");
+    if (ClampsDepthRange(context) && (viewport.minDepth < 0 || viewport.minDepth > 1 || viewport.maxDepth < 0 || viewport.maxDepth > 1)) ReportClampedDepth("viewport depth", viewport.minDepth, viewport.maxDepth);
+    Require(context.depthRangeUnrestricted || ClampsDepthRange(context) || (viewport.minDepth >= 0 && viewport.minDepth <= 1 && viewport.maxDepth >= 0 && viewport.maxDepth <= 1), "viewport depth outside [0, 1] requires VK_EXT_depth_range_unrestricted");
     Require(std::isfinite(viewport.x) && std::isfinite(viewport.y) && std::isfinite(viewport.width) && std::isfinite(viewport.height), "viewport arithmetic overflow");
     Require(viewport.width <= context.limits.maxViewportDimensions[0] && std::abs(viewport.height) <= context.limits.maxViewportDimensions[1], "viewport dimensions exceed device limits");
     Require(viewport.x >= context.limits.viewportBoundsRange[0] && viewport.x + viewport.width <= context.limits.viewportBoundsRange[1], "viewport X exceeds device bounds");
@@ -762,8 +791,9 @@ void Pipeline::Begin(VkCommandBuffer commands, const Framebuffer& framebuffer, V
 void Pipeline::Continue(VkCommandBuffer commands, const State& state) const {
     if (optimized != nullptr) optimized->Schedule();
     const auto best = optimized != nullptr ? optimized->handle.load() : VK_NULL_HANDLE;
+    const auto viewport = DeviceViewport(context, state.viewport);
     context.Resolved(&DeviceFunctions::cmdBindPipeline, "vkCmdBindPipeline")(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, best != VK_NULL_HANDLE ? best : pipeline);
-    context.Resolved(&DeviceFunctions::cmdSetViewport, "vkCmdSetViewport")(commands, 0, 1, &state.viewport);
+    context.Resolved(&DeviceFunctions::cmdSetViewport, "vkCmdSetViewport")(commands, 0, 1, &viewport);
     context.Resolved(&DeviceFunctions::cmdSetScissor, "vkCmdSetScissor")(commands, 0, 1, &state.scissor);
     if (state.stencilReplayReference) context.Resolved(&DeviceFunctions::cmdSetStencilReference, "vkCmdSetStencilReference")(commands, VK_STENCIL_FACE_FRONT_AND_BACK, *state.stencilReplayReference);
     if (libraries) {
@@ -772,7 +802,7 @@ void Pipeline::Continue(VkCommandBuffer commands, const State& state) const {
     }
     if (depthBias) context.Resolved(&DeviceFunctions::cmdSetDepthBias, "vkCmdSetDepthBias")(commands, HostDepthBiasConstant(context, state.depth->format, state.depthBiasConstant), state.depthBiasClamp, state.depthBiasSlope);
     if (!depthBounds) return;
-    context.Resolved(&DeviceFunctions::cmdSetDepthBounds, "vkCmdSetDepthBounds")(commands, state.minDepthBounds, state.maxDepthBounds);
+    context.Resolved(&DeviceFunctions::cmdSetDepthBounds, "vkCmdSetDepthBounds")(commands, DeviceDepth(context, state.minDepthBounds), DeviceDepth(context, state.maxDepthBounds));
 }
 
 void Pipeline::setLibraryState(VkCommandBuffer commands, const State& state) const {
@@ -780,7 +810,7 @@ void Pipeline::setLibraryState(VkCommandBuffer commands, const State& state) con
     context.Resolved(&DeviceFunctions::cmdSetCullMode, "vkCmdSetCullModeEXT")(commands, state.cullMode);
     context.Resolved(&DeviceFunctions::cmdSetFrontFace, "vkCmdSetFrontFaceEXT")(commands, state.frontFace);
     context.Resolved(&DeviceFunctions::cmdSetDepthBias, "vkCmdSetDepthBias")(commands, depthBias ? HostDepthBiasConstant(context, state.depth->format, state.depthBiasConstant) : 0.0f, depthBias ? state.depthBiasClamp : 0.0f, depthBias ? state.depthBiasSlope : 0.0f);
-    context.Resolved(&DeviceFunctions::cmdSetDepthBounds, "vkCmdSetDepthBounds")(commands, depthBounds ? state.minDepthBounds : 0.0f, depthBounds ? state.maxDepthBounds : 1.0f);
+    context.Resolved(&DeviceFunctions::cmdSetDepthBounds, "vkCmdSetDepthBounds")(commands, depthBounds ? DeviceDepth(context, state.minDepthBounds) : 0.0f, depthBounds ? DeviceDepth(context, state.maxDepthBounds) : 1.0f);
     context.Resolved(&DeviceFunctions::cmdSetDepthTestEnable, "vkCmdSetDepthTestEnableEXT")(commands, depth && state.depthTest);
     context.Resolved(&DeviceFunctions::cmdSetDepthWriteEnable, "vkCmdSetDepthWriteEnableEXT")(commands, depth && state.depthWrite);
     context.Resolved(&DeviceFunctions::cmdSetDepthCompareOp, "vkCmdSetDepthCompareOpEXT")(commands, depth ? state.depthCompare : VK_COMPARE_OP_ALWAYS);
@@ -804,10 +834,11 @@ void Pipeline::ContinueSecondChannel(VkCommandBuffer commands) const {
 void Pipeline::ContinueBackFaces(VkCommandBuffer commands, const State& state) const {
     Require(backFaces != VK_NULL_HANDLE, "the pipeline draws both faces in one pass");
     context.Resolved(&DeviceFunctions::cmdBindPipeline, "vkCmdBindPipeline")(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, backFaces);
-    context.Resolved(&DeviceFunctions::cmdSetViewport, "vkCmdSetViewport")(commands, 0, 1, &state.viewport);
+    const auto viewport = DeviceViewport(context, state.viewport);
+    context.Resolved(&DeviceFunctions::cmdSetViewport, "vkCmdSetViewport")(commands, 0, 1, &viewport);
     context.Resolved(&DeviceFunctions::cmdSetScissor, "vkCmdSetScissor")(commands, 0, 1, &state.scissor);
     context.Resolved(&DeviceFunctions::cmdSetDepthBias, "vkCmdSetDepthBias")(commands, HostDepthBiasConstant(context, state.depth->format, state.backDepthBiasConstant), state.depthBiasClamp, state.backDepthBiasSlope);
-    if (depthBounds) context.Resolved(&DeviceFunctions::cmdSetDepthBounds, "vkCmdSetDepthBounds")(commands, state.minDepthBounds, state.maxDepthBounds);
+    if (depthBounds) context.Resolved(&DeviceFunctions::cmdSetDepthBounds, "vkCmdSetDepthBounds")(commands, DeviceDepth(context, state.minDepthBounds), DeviceDepth(context, state.maxDepthBounds));
 }
 
 void Pipeline::PushConstants(VkCommandBuffer commands, VkShaderStageFlags stages, std::span<const std::byte, PipelinePushConstantBytes> bytes) const {
