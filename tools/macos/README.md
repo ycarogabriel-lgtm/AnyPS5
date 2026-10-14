@@ -1,6 +1,6 @@
-# macOS tools
+# macOS
 
-Scripts for running a title on macOS (Apple silicon, Rosetta 2, MoltenVK) from this branch.
+Running a title on macOS (Apple silicon, Rosetta 2, MoltenVK) with the scripts in [tools/macos](../../tools/macos).
 
 ## Build
 
