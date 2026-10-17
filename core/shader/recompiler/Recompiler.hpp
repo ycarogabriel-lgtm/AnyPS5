@@ -111,7 +111,9 @@ enum class ConservativeZExport : std::uint8_t {
 
 enum class ColorExportPacking : std::uint8_t {
     None,
-    Unorm10_11_11
+    Unorm10_11_11,
+    RawUint,
+    RawSint
 };
 
 enum class RasterPrimitive : std::uint8_t {

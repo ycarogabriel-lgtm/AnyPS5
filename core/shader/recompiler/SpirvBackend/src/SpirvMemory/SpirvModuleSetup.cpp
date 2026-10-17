@@ -301,7 +301,7 @@ void DefineModule(SpirvEmitterState& state) {
         state.module.RequireVersion(0x00010500u);
         state.module.EmitCapability(spv::CapabilityShaderViewportIndex);
     }
-    if (InputVariableForKind(state, StageInputKind::SampleId) != 0) {
+    if (InputVariableForKind(state, StageInputKind::SampleId) != 0 || state.ownSampleIdVariable != 0) {
         state.module.EmitCapability(spv::CapabilitySampleRateShading);
     }
     if (state.requirements.imageGatherExtended) {
