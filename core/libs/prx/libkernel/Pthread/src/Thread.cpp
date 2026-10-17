@@ -76,9 +76,9 @@ static GuestThreadState& CurrentGuestState() {
     return state;
 #endif
 }
-static std::mutex stackLock;
-static std::map<PthreadPrivate*, std::pair<std::uintptr_t, std::uintptr_t>> liveStacks;
-static std::map<std::uintptr_t, std::size_t> protectedStackPages;
+static std::mutex& stackLock = *new std::mutex;
+static auto& liveStacks = *new std::map<PthreadPrivate*, std::pair<std::uintptr_t, std::uintptr_t>>;
+static auto& protectedStackPages = *new std::map<std::uintptr_t, std::size_t>;
 #if defined(__linux__)
 struct GuestStackMapping {
     std::uintptr_t mappingEnd;
