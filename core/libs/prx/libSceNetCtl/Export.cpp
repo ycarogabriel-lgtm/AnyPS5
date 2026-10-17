@@ -16,7 +16,6 @@
 #include <netpacket/packet.h>
 #endif
 #ifdef __APPLE__
-#include <net/if_dl.h>
 #include <sys/sysctl.h>
 #endif
 #endif
@@ -169,40 +168,52 @@ struct HostDefaultRoute {
 };
 
 #ifdef __APPLE__
-static std::vector<HostDefaultRoute> HostDefaultRoutes() {
-    int request[] = {CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_DUMP, 0};
-    std::size_t size = 0;
-    if (sysctl(request, 6, nullptr, &size, nullptr, 0) != 0) throw std::runtime_error("sceNetCtlGetInfo: the host routing table is unavailable");
-    std::vector<char> table(size);
-    if (sysctl(request, 6, table.data(), &size, nullptr, 0) != 0) throw std::runtime_error("sceNetCtlGetInfo: the host routing table is unavailable");
-    const auto alignedLength = [](std::size_t length) { return length == 0 ? sizeof(std::uint32_t) : (length + sizeof(std::uint32_t) - 1) & ~(sizeof(std::uint32_t) - 1); };
-    std::vector<HostDefaultRoute> routes;
+struct NetCtlDefaultRoute {
+    char name[IF_NAMESIZE];
+    in_addr gateway;
+    std::uint32_t metric;
+};
+
+extern "C" std::size_t NetCtlDefaultRoutes_nid_no_patch(const char* table, std::size_t size, NetCtlDefaultRoute* routes, std::size_t capacity) {
+    std::size_t count = 0;
     for (std::size_t offset = 0; offset + sizeof(rt_msghdr) <= size;) {
-        const auto* message = reinterpret_cast<const rt_msghdr*>(table.data() + offset);
-        if (message->rtm_msglen == 0) break;
-        offset += message->rtm_msglen;
-        if (!(message->rtm_flags & RTF_UP) || (message->rtm_flags & RTF_REJECT) || !(message->rtm_flags & RTF_GATEWAY)) continue;
-        const sockaddr* addresses[RTAX_MAX]{};
-        const char* cursor = reinterpret_cast<const char*>(message + 1);
-        for (int index = 0; index < RTAX_MAX; ++index) {
-            if (!(message->rtm_addrs & (1 << index))) continue;
-            addresses[index] = reinterpret_cast<const sockaddr*>(cursor);
-            cursor += alignedLength(addresses[index]->sa_len);
+        const auto* header = reinterpret_cast<const rt_msghdr*>(table + offset);
+        if (header->rtm_msglen < sizeof(rt_msghdr) || header->rtm_msglen > size - offset) break;
+        const sockaddr* addresses[RTAX_MAX] = {};
+        const std::size_t end = offset + header->rtm_msglen;
+        std::size_t field = offset + sizeof(rt_msghdr);
+        for (int index = 0; index < RTAX_MAX && field + sizeof(sockaddr) <= end; ++index) {
+            if (!(header->rtm_addrs & (1 << index))) continue;
+            const auto* address = reinterpret_cast<const sockaddr*>(table + field);
+            addresses[index] = address;
+            field += address->sa_len ? (address->sa_len + sizeof(std::uint32_t) - 1) & ~(sizeof(std::uint32_t) - 1) : sizeof(std::uint32_t);
         }
+        offset = end;
         const auto* destination = addresses[RTAX_DST];
         const auto* gateway = addresses[RTAX_GATEWAY];
-        if (!destination || destination->sa_family != AF_INET || reinterpret_cast<const sockaddr_in*>(destination)->sin_addr.s_addr != 0) continue;
-        const auto* mask = addresses[RTAX_NETMASK];
-        if (mask && mask->sa_len > offsetof(sockaddr_in, sin_addr) && reinterpret_cast<const sockaddr_in*>(mask)->sin_addr.s_addr != 0) continue;
-        if (!gateway || gateway->sa_family != AF_INET) continue;
-        char name[IF_NAMESIZE]{};
-        if (!if_indextoname(message->rtm_index, name)) continue;
-        HostDefaultRoute route;
-        route.name = name;
+        if (!destination || destination->sa_family != AF_INET || !gateway || gateway->sa_family != AF_INET) continue;
+        if (reinterpret_cast<const sockaddr_in*>(destination)->sin_addr.s_addr != 0) continue;
+        if (!(header->rtm_flags & RTF_UP) || (header->rtm_flags & (RTF_REJECT | RTF_HOST))) continue;
+        NetCtlDefaultRoute route{};
+        if (!if_indextoname(header->rtm_index, route.name)) continue;
         route.gateway = reinterpret_cast<const sockaddr_in*>(gateway)->sin_addr;
-        route.metric = routes.size();
-        routes.push_back(route);
+        route.metric = (header->rtm_flags & RTF_IFSCOPE) ? 1 : 0;
+        if (count < capacity) routes[count] = route;
+        ++count;
     }
+    return count;
+}
+
+static std::vector<HostDefaultRoute> HostDefaultRoutes() {
+    int name[] = {CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_FLAGS, RTF_GATEWAY};
+    std::size_t size = 0;
+    if (sysctl(name, 6, nullptr, &size, nullptr, 0) != 0) throw std::runtime_error("sceNetCtlGetInfo: the host routing table is unavailable");
+    std::vector<char> table(size);
+    if (sysctl(name, 6, table.data(), &size, nullptr, 0) != 0) throw std::runtime_error("sceNetCtlGetInfo: the host routing table is unavailable");
+    std::vector<NetCtlDefaultRoute> found(NetCtlDefaultRoutes_nid_no_patch(table.data(), size, nullptr, 0));
+    found.resize(NetCtlDefaultRoutes_nid_no_patch(table.data(), size, found.data(), found.size()));
+    std::vector<HostDefaultRoute> routes;
+    for (const auto& entry : found) routes.push_back({entry.name, entry.gateway, entry.metric});
     return routes;
 }
 #else
