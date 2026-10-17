@@ -738,6 +738,11 @@ int GuestSockets::Stat(int descriptor, FileStat* status) {
 #ifdef _WIN32
     unsigned long count = 0;
     if (ioctlsocket(socket->value, FIONREAD, &count) == 0) available = static_cast<std::int64_t>(count);
+#elif defined(__APPLE__)
+    int count = 0;
+    socklen_t countSize = sizeof(count);
+    const auto queried = socket->type == 2 ? getsockopt(socket->value, SOL_SOCKET, SO_NREAD, &count, &countSize) : ::ioctl(socket->value, FIONREAD, &count);
+    if (queried == 0) available = count;
 #else
     int count = 0;
     if (::ioctl(socket->value, FIONREAD, &count) == 0) available = count;
@@ -787,6 +792,11 @@ bool GuestSockets::Ready(int descriptor, bool write, std::int64_t* data, bool* e
 #ifdef _WIN32
         unsigned long available = 0;
         if (ioctlsocket(socket->value, FIONREAD, &available) == 0) *data = static_cast<std::int64_t>(available);
+#elif defined(__APPLE__)
+        int available = 0;
+        socklen_t length = sizeof(available);
+        const auto queried = socket->type == 2 ? getsockopt(socket->value, SOL_SOCKET, SO_NREAD, &available, &length) : ::ioctl(socket->value, FIONREAD, &available);
+        if (queried == 0) *data = available;
 #else
         int available = 0;
         if (::ioctl(socket->value, FIONREAD, &available) == 0) *data = available;
