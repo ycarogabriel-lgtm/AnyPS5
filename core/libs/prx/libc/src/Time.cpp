@@ -25,7 +25,7 @@ constexpr const char* MONTH_NAMES[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
 constexpr std::size_t ASCTIME_SIZE = sizeof("Sun Jan-2147483648 -2147483648:-2147483648:-2147483648     -2147481748\n");
 constexpr std::int64_t SECONDS_PER_DAY = 86400;
 constexpr std::int64_t DAYS_FROM_MARCH_TO_YEAR_END = 306;
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 constexpr std::int64_t CALENDAR_CYCLE_YEARS = 400;
 constexpr std::int64_t CALENDAR_CYCLE_SECONDS = 146097 * SECONDS_PER_DAY;
 constexpr std::int64_t HOST_LAST_SECOND = 32535215999;
@@ -540,6 +540,17 @@ int64_t APS5_VABI libc_mktime_nid_postfix(GuestTm* timeptr) {
     const std::int64_t approximate = ordinary ? SECONDS_PER_DAY : utcSeconds(host);
     if (approximate < SECONDS_PER_DAY || approximate > HOST_LAST_SECOND - SECONDS_PER_DAY) {
         moved = calendarCycles(approximate - SECONDS_PER_DAY, CALENDAR_CYCLE_SECONDS) * CALENDAR_CYCLE_SECONDS;
+        GuestTm window{};
+        if (!utcCalendarFields(approximate - moved, window)) return -1;
+        window.tm_isdst = host.tm_isdst;
+        host = toHostTm(window);
+        host.tm_wday = -1;
+    }
+#elif defined(__APPLE__)
+    constexpr std::int64_t HOST_FIRST_SECOND = -2177452800 + SECONDS_PER_DAY;
+    const std::int64_t approximate = utcSeconds(host);
+    if (approximate < HOST_FIRST_SECOND) {
+        moved = calendarCycles(approximate - HOST_FIRST_SECOND, CALENDAR_CYCLE_SECONDS) * CALENDAR_CYCLE_SECONDS;
         GuestTm window{};
         if (!utcCalendarFields(approximate - moved, window)) return -1;
         window.tm_isdst = host.tm_isdst;
