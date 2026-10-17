@@ -75,3 +75,21 @@ Mesma máquina e seleção, após `1c772b1b4` (layer sem `Geometry`) e `6fb4e2f1
 - `store_over_untracked` ("the result did not reach a block the CPU left alone"): passou na rodada de 17/10 00:30, mas falha hoje 3 de 3 também com as fontes anteriores a estas correções e no build `macos/integration`; não é regressão desta branch. Depende de estado da máquina ainda não identificado (não muda com `ANYPS5_NO_SHADER_CACHE=1` nem `APS5_NO_WRITE_WATCH=1`).
 
 Resultado esperado com as correções: 20 falhas das 30 originais, das quais 5 são limites reais do Metal/MoltenVK (cull distance, redução min/max) e 6 dependem de um MoltenVK com SPIRV-Cross #2704.
+
+## MoltenVK com SPIRV-Cross #2704
+
+MoltenVK `main` em `5189f8de` ainda fixa SPIRV-Cross `aa217aeb`, anterior à correção. Build local com a revisão trocada para `300681bb` (merge de #2704):
+
+```sh
+git clone https://github.com/KhronosGroup/MoltenVK.git && cd MoltenVK
+echo 300681bbcb8365a8d1eacdacdbdd0249bbf1d6b1 > ExternalRevisions/SPIRV-Cross_repo_revision
+./fetchDependencies --macos && make macos
+```
+
+O resultado (`Package/Release/MoltenVK/dynamic/dylib/macOS`, x86_64 + arm64, MoltenVK 1.4.3) só é usado se a pasta dele vier **antes** da pasta do SDK em `DYLD_LIBRARY_PATH`: o manifesto aponta para `./libMoltenVK.dylib` e o dyld procura esse nome primeiro no `DYLD_LIBRARY_PATH`, onde o SDK tem outra cópia. Conferir pelo MSL (`MVK_CONFIG_SHADER_DUMP_DIR`): o helper deve gerar `fma(l, r, T(-0.0))`.
+
+Na branch `macos/integration` (`bbd10b011`), com esse MoltenVK: **590 selecionados, 510 passam, 15 falham, 65 skips** (eram 30 falhas no começo desta exploração). Os seis testes de zero negativo passam; `f32_denormal_flush` e `f32_constant_factor_tininess` seguem falhando por tininess. Nova instabilidade: `cross_workgroup_flag` passou 1 de 3 isolado com este driver e passou nas duas rodadas com o MoltenVK do SDK.
+
+## Primeiro título
+
+DOOM Shareware (homebrew PPSA99666 v1.1.1, `lowbit/ps5-doom`, SHA-256 conferido), `tools/unwrap_self.py` no `eboot.bin` e no `sce_module/libc.prx`, `relinker --macos --to-rosetta`, bibliotecas de `macos/integration` em `2426107cf`, este MoltenVK: passa do launcher, carrega `doom1.wad` e desenha o menu de episódios sobre a demo (quadros salvos com `APS5_DUMP_FRAMES`). A correção necessária foi `sceKernelInternalMemoryGetModuleSegmentInfo` no macOS.
