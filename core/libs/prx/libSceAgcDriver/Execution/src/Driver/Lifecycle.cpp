@@ -46,6 +46,12 @@ bool StackHoldsImport() {
     ULONG_PTR low = 0;
     ULONG_PTR high = 0;
     GetCurrentThreadStackLimits(&low, &high);
+#elif defined(__APPLE__)
+    const auto self = pthread_self();
+    const auto high = reinterpret_cast<std::uintptr_t>(pthread_get_stackaddr_np(self));
+    const auto size = pthread_get_stacksize_np(self);
+    if (high == 0 || size == 0 || size > high) return false;
+    const auto low = high - size;
 #else
     struct Bounds {
         std::uintptr_t low = 0;

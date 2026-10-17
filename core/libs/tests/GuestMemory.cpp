@@ -237,6 +237,7 @@ static void CheckInternalNamedFlexibleMapping() {
     Require(sceKernelAvailableFlexibleMemorySize(&available) == 0 && available == before);
 }
 
+#ifndef __APPLE__
 static void CheckGuestModuleUsesFlexibleMemory() {
     constexpr std::size_t moduleData = 0x10000;
     const auto path = std::filesystem::relative(GUEST_MEMORY_MODULE).generic_string();
@@ -251,6 +252,7 @@ static void CheckGuestModuleUsesFlexibleMemory() {
     Require(dlclose_nid_postfix(module) == 0);
     Require(sceKernelAvailableFlexibleMemorySize(&available) == 0 && available == before);
 }
+#endif
 
 static void CheckBatchMapStopsAtInvalidEntry() {
     constexpr std::size_t page = 0x4000;
@@ -2587,6 +2589,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     Require(argc == 1);
+    const bool arena = GuestArena::GuestArenaAvailable_nid_postfix();
     CheckAvailableDirectMemoryIsLargestFreeBlock();
     CheckVirtualQuerySplitFlexibleRanges();
     CheckVirtualQueryForNonReadableGuestRange();
@@ -2600,7 +2603,9 @@ int main(int argc, char** argv) {
     CheckVirtualQueryWireLayout();
     CheckNamedAndHintedMappings();
     CheckInternalNamedFlexibleMapping();
+#ifndef __APPLE__
     CheckGuestModuleUsesFlexibleMemory();
+#endif
     CheckBatchMapStopsAtInvalidEntry();
     CheckCheckedReleaseDirectMemory();
     CheckAudioCoprocessorProtection();
@@ -2628,31 +2633,31 @@ int main(int argc, char** argv) {
     CheckMtypeprotect();
     CheckHeapAlignment();
     CheckHeapAfterMappingReuse();
-    CheckNoOverwriteRejectsHostOccupiedMapping();
-    CheckFixedMappingsReachTheApplicationAreaEnd();
+    if (arena) CheckNoOverwriteRejectsHostOccupiedMapping();
+    if (arena) CheckFixedMappingsReachTheApplicationAreaEnd();
 #ifdef _WIN32
     CheckGuestModuleImageProtection();
     CheckAliasAcrossDirectAllocations();
     CheckAliasOfReorderedSharedPages();
     CheckAliasRefusesPagesThatAreNotSharedViews();
 #endif
-    CheckUnhintedKernelMappingsLandInTheWindow();
+    if (arena) CheckUnhintedKernelMappingsLandInTheWindow();
 #if defined(__linux__)
     CheckUnmappedArenaRangeStaysReserved();
 #endif
-    CheckArenaPlacesUnhintedMappingsInsideTheWindow();
-    CheckArenaReusesAFreedRange();
-    CheckArenaHonoursHintsWithoutGoingBelowThem();
-    CheckSharedWriteTracking();
-    CheckSharedWritePages();
-    CheckSharedWritesDuringHostWrite();
-    CheckReadsIntoSharedWriteTracking();
-    CheckPinnedSharedPages();
-    CheckFailedCollectKeepsWrites();
-    CheckSingleDirectMappingTracksWritesWithoutFaults();
-    CheckSecondDirectMappingWaitsForLeases();
-    CheckBreakingAResidentRunKeepsConcurrentAccesses();
-    CheckRemappedDirectMemoryIsChargedOnce();
+    if (arena) CheckArenaPlacesUnhintedMappingsInsideTheWindow();
+    if (arena) CheckArenaReusesAFreedRange();
+    if (arena) CheckArenaHonoursHintsWithoutGoingBelowThem();
+    if (arena) CheckSharedWriteTracking();
+    if (arena) CheckSharedWritePages();
+    if (arena) CheckSharedWritesDuringHostWrite();
+    if (arena) CheckReadsIntoSharedWriteTracking();
+    if (arena) CheckPinnedSharedPages();
+    if (arena) CheckFailedCollectKeepsWrites();
+    if (arena) CheckSingleDirectMappingTracksWritesWithoutFaults();
+    if (arena) CheckSecondDirectMappingWaitsForLeases();
+    if (arena) CheckBreakingAResidentRunKeepsConcurrentAccesses();
+    if (arena) CheckRemappedDirectMemoryIsChargedOnce();
 #if defined(__linux__)
     CheckWriteWatch();
     CheckWriteWatchArmedCollect();

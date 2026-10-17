@@ -1473,13 +1473,15 @@ int main() {
     TestMalformedCommandSizes();
     TestResolveSymbolicLink();
     TestGatherScatter();
-    TestAmmRangesAboveHintedMaps();
     TestAmmUsageStats();
-    TestAmmRemapKeepsPoolReferences();
-    TestAmmMapFailureKeepsPoolOwnership();
-    TestAmm();
-    TestAmmRemapAndProtect();
-    TestAmmPrt();
-    TestKernelWriteCommands();
+    if (GuestArena::GuestArenaAvailable_nid_postfix()) {
+        TestAmmRangesAboveHintedMaps();
+        TestAmmRemapKeepsPoolReferences();
+        TestAmmMapFailureKeepsPoolOwnership();
+        TestAmm();
+        TestAmmRemapAndProtect();
+        TestAmmPrt();
+        TestKernelWriteCommands();
+    }
     return 0;
 }

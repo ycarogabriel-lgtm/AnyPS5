@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <cstdlib>
 #include <string>
 #include <limits>
 #include <thread>
@@ -884,7 +885,11 @@ void testOneDevice() {
 
 }
 
-int main(int argc, char** argv) {
+#ifdef __APPLE__
+extern "C" [[noreturn]] void Aps5StartGuest_nid_no_patch(void (*entry)(void*, void*), void* block);
+#endif
+
+int runTests(int argc, char** argv) {
     VideoOutTestEnvironment environment;
     try {
         if (argc == 2 && std::string(argv[1]) == "decode") testDecode();
@@ -918,4 +923,17 @@ int main(int argc, char** argv) {
         }
         return 1;
     }
+}
+
+int main(int argc, char** argv) {
+#ifdef __APPLE__
+    // AppKit needs the main thread: run the tests the way a relinked guest runs (Aps5StartGuest).
+    static int arguments;
+    static char** values;
+    arguments = argc;
+    values = argv;
+    Aps5StartGuest_nid_no_patch([](void*, void*) { std::exit(runTests(arguments, values)); }, nullptr);
+#else
+    return runTests(argc, argv);
+#endif
 }
