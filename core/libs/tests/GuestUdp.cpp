@@ -263,6 +263,9 @@ int main() {
     Require(ioctl_nid_postfix(receiver, 0x4004667f, &queued) == -1);
     Require(_ioctl_nid_postfix(receiver, 0x4004667f, &queued) == -1 && *__error_nid_postfix() == 9);
     Require(close_nid_postfix(sender) == 0);
+#ifdef __APPLE__
+    Require(close_nid_postfix(addressed) == 0);
+#endif
     const int peer = socket_nid_postfix(2, 2, 0);
     const int other = socket_nid_postfix(2, 2, 0);
     const int dissolved = socket_nid_postfix(2, 2, 0);

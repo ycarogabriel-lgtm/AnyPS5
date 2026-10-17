@@ -568,7 +568,6 @@ bool describePages(std::uintptr_t address, std::size_t bytes, Emit&& emit) {
         if (!emit(PageRun{cursor, next, readable, writable})) return true;
         cursor = next;
 #elif defined(__APPLE__)
-        // The region at or above the cursor, with its current protection.
         auto regionBase = static_cast<mach_vm_address_t>(cursor);
         mach_vm_size_t regionSize = 0;
         vm_region_basic_info_data_64_t info{};
@@ -679,7 +678,6 @@ bool onOwnLiveStack(std::uintptr_t address, std::size_t bytes) {
             low = static_cast<std::uintptr_t>(lowLimit);
             high = static_cast<std::uintptr_t>(highLimit);
 #elif defined(__APPLE__)
-            // Darwin reports the top of the stack and its size; there is no pthread_getattr_np.
             high = reinterpret_cast<std::uintptr_t>(pthread_get_stackaddr_np(pthread_self()));
             low = high - pthread_get_stacksize_np(pthread_self());
 #else

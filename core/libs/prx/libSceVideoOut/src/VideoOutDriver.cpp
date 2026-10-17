@@ -640,8 +640,8 @@ void VideoOutDriver::presentLoop(std::stop_token token, std::promise<void>& star
         OnMainThread([&] {
             window.Ensure(VIDEO_OUT_DEFAULT_WIDTH, VIDEO_OUT_DEFAULT_HEIGHT);
             updateDisplayRefreshRate();
-            hdrProbe.Poll(window.Handle());
         });
+        hdrProbe.Poll(window.Handle());
         const auto extensions = windowExtensions(window.Handle());
         AgcDriverAttachWindow_nid_postfix({window.Handle(), extensions, &createWindowSurface, &windowDrawableSize, VIDEO_OUT_DEFAULT_WIDTH, VIDEO_OUT_DEFAULT_HEIGHT, nullptr});
         hdrGeneration = AgcDriver::CurrentHostHdr().generation;
@@ -695,7 +695,6 @@ void VideoOutDriver::presentLoop(std::stop_token token, std::promise<void>& star
                 }
                 padInput->Update();
                 updateDisplayRefreshRate();
-                mouseInput->UpdateCapture(!padInput->MouseModeEnabled());
                 return false;
             });
             if (quit) {
@@ -703,6 +702,7 @@ void VideoOutDriver::presentLoop(std::stop_token token, std::promise<void>& star
                 throw ProcessShutdown{};
             }
             pollHostHdr();
+            OnMainThread([&] { mouseInput->UpdateCapture(!padInput->MouseModeEnabled()); });
             if (current) {
                 require(current->timing != nullptr, "missing presentation timing");
                 const auto dequeued = AgcDriver::FrameTiming::Clock::now();
@@ -769,10 +769,10 @@ void VideoOutDriver::presentLoop(std::stop_token token, std::promise<void>& star
     }
     hdrProbe.Release();
     OnMainThread([&] {
-        imeTextInput.reset();
         padInput.reset();
         mouseInput.reset();
         keyboardInput.reset();
+        imeTextInput.reset();
         window.Destroy();
     });
 }

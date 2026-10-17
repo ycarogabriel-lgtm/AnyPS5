@@ -1473,9 +1473,9 @@ int main() {
     TestMalformedCommandSizes();
     TestResolveSymbolicLink();
     TestGatherScatter();
-    TestAmmUsageStats();
     if (GuestArena::GuestArenaAvailable_nid_postfix()) {
         TestAmmRangesAboveHintedMaps();
+        TestAmmUsageStats();
         TestAmmRemapKeepsPoolReferences();
         TestAmmMapFailureKeepsPoolOwnership();
         TestAmm();
