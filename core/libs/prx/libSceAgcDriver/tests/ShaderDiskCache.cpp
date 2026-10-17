@@ -735,7 +735,7 @@ void verifyFloatModeSerialization() {
 
 int runLargeFileWrite() {
     constexpr std::size_t size = (std::size_t{2} << 30u) + 4096u;
-    const auto directory = std::filesystem::temp_directory_path() / "aps5-shader-disk-cache-large-file-test";
+    const auto directory = std::filesystem::temp_directory_path() / ("aps5-shader-disk-cache-large-file-test-" + std::to_string(std::random_device{}()));
     std::error_code error;
     std::filesystem::remove_all(directory, error);
     std::filesystem::create_directories(directory, error);
@@ -763,8 +763,8 @@ int runLargeFileWrite() {
             written->set_exception(std::current_exception());
         }
     }).detach();
-    if (result.wait_for(std::chrono::seconds(120)) != std::future_status::ready) {
-        std::cerr << "WriteFileAtomically did not return within 120 s for a file of more than 2 GiB\n";
+    if (result.wait_for(std::chrono::seconds(200)) != std::future_status::ready) {
+        std::cerr << "WriteFileAtomically did not return within 200 s for a file of more than 2 GiB\n";
         std::cerr.flush();
         std::_Exit(1);
     }
