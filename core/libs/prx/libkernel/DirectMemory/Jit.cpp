@@ -2,8 +2,8 @@
 #include "prx/libc/include/GuestArena.hpp"
 #include "prx/libkernel/DirectMemory/DirectMemory.hpp"
 
-#include <atomic>
-#include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -143,17 +143,14 @@ int DuplicateDescriptor(int descriptor) {
 #else
 int CreateBacking(std::size_t bytes, int* descriptor, std::shared_ptr<JitObject>* object) {
 #ifdef __APPLE__
-    static std::atomic<unsigned> sequence{0};
-    char name[32];
-    std::snprintf(name, sizeof(name), "/aps5-jit-%d-%u", static_cast<int>(::getpid()), sequence.fetch_add(1));
-    const int file = ::shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
-    if (file >= 0) {
-        const int unlinked = ::shm_unlink(name);
-        if (unlinked != 0 || ::fcntl(file, F_SETFD, FD_CLOEXEC) != 0) {
-            const int error = errno;
-            ::close(file);
-            return HostFailure("prepare JIT shared memory", error);
-        }
+    const char* directory = std::getenv("TMPDIR");
+    std::string pattern = std::string(directory && *directory ? directory : "/tmp") + "/aps5-jit-XXXXXX";
+    const int file = ::mkstemp(pattern.data());
+    if (file >= 0 && ::fcntl(file, F_SETFD, FD_CLOEXEC) != 0) {
+        const int error = errno;
+        ::unlink(pattern.c_str());
+        ::close(file);
+        return HostFailure("prepare JIT shared memory", error);
     }
 #else
     const int file = memfd_create("anyps5 jit shared memory", MFD_CLOEXEC);
@@ -162,9 +159,22 @@ int CreateBacking(std::size_t bytes, int* descriptor, std::shared_ptr<JitObject>
     const bool representable = bytes <= static_cast<std::uint64_t>(std::numeric_limits<off_t>::max());
     if (!representable || ftruncate(file, static_cast<off_t>(bytes)) != 0) {
         const int error = !representable || errno == EFBIG ? ENOMEM : errno;
+#ifdef __APPLE__
+        ::unlink(pattern.c_str());
+#endif
         ::close(file);
         return HostFailure("size JIT shared memory", error);
     }
+#ifdef __APPLE__
+    void* const validated = ::mmap(nullptr, PS5_PAGE_SIZE, PROT_READ | PROT_EXEC, MAP_SHARED, file, 0);
+    const int validation = validated == MAP_FAILED ? errno : 0;
+    if (validated != MAP_FAILED) ::munmap(validated, PS5_PAGE_SIZE);
+    const int unlinkError = ::unlink(pattern.c_str()) != 0 ? errno : 0;
+    if (validation != 0 || unlinkError != 0) {
+        ::close(file);
+        return HostFailure("prepare executable JIT shared memory", validation != 0 ? validation : unlinkError);
+    }
+#endif
     *descriptor = file;
     *object = std::make_shared<JitObject>(bytes);
     return 0;

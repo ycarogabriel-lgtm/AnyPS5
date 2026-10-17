@@ -1066,6 +1066,10 @@ int DoMapShared(void** addr, size_t len, int prot, HostSharedMemory object) {
     try {
 #ifdef _WIN32
         GuestArena::GuestArenaMap_nid_postfix(mapped, len, object, 0, WinProtFromPosix(nativeProtection));
+#elif defined(__APPLE__)
+        const bool writableCode = (nativeProtection & PROT_WRITE) != 0 && (nativeProtection & PROT_EXEC) != 0;
+        if (::mmap(mapped, len, writableCode ? nativeProtection & ~PROT_EXEC : nativeProtection, MAP_SHARED | MAP_FIXED, object, 0) == MAP_FAILED) throw std::system_error(errno, std::generic_category(), "map shared memory");
+        if (writableCode && ::mprotect(mapped, len, nativeProtection) != 0) throw std::system_error(errno, std::generic_category(), "make shared memory executable");
 #else
         if (::mmap(mapped, len, nativeProtection, MAP_SHARED | MAP_FIXED, object, 0) == MAP_FAILED) throw std::system_error(errno, std::generic_category(), "map shared memory");
 #endif
