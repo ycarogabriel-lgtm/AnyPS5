@@ -68,6 +68,9 @@ public:
         GuestArena::GuestArenaForgetSection_nid_postfix(section);
         CloseHandle(section);
     }
+#elif defined(__APPLE__)
+    JitObject(std::size_t bytes, std::string path) : bytes(bytes), path(std::move(path)) {}
+    ~JitObject() { ::unlink(path.c_str()); }
 #else
     explicit JitObject(std::size_t bytes) : bytes(bytes) {}
 #endif
@@ -89,6 +92,8 @@ private:
     std::size_t bytes;
 #ifdef _WIN32
     HANDLE section;
+#elif defined(__APPLE__)
+    std::string path;
 #endif
 };
 
@@ -165,18 +170,12 @@ int CreateBacking(std::size_t bytes, int* descriptor, std::shared_ptr<JitObject>
         ::close(file);
         return HostFailure("size JIT shared memory", error);
     }
-#ifdef __APPLE__
-    void* const validated = ::mmap(nullptr, PS5_PAGE_SIZE, PROT_READ | PROT_EXEC, MAP_SHARED, file, 0);
-    const int validation = validated == MAP_FAILED ? errno : 0;
-    if (validated != MAP_FAILED) ::munmap(validated, PS5_PAGE_SIZE);
-    const int unlinkError = ::unlink(pattern.c_str()) != 0 ? errno : 0;
-    if (validation != 0 || unlinkError != 0) {
-        ::close(file);
-        return HostFailure("prepare executable JIT shared memory", validation != 0 ? validation : unlinkError);
-    }
-#endif
     *descriptor = file;
+#ifdef __APPLE__
+    *object = std::make_shared<JitObject>(bytes, std::move(pattern));
+#else
     *object = std::make_shared<JitObject>(bytes);
+#endif
     return 0;
 }
 
