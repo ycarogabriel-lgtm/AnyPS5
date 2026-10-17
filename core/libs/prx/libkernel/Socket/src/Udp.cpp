@@ -1051,7 +1051,16 @@ int APS5_VABI shutdown_nid_postfix(int descriptor, int how) {
     const auto socket = Lookup(descriptor);
     if (!socket) return Fail(9);
     if (how < 0 || how > 2) return Fail(22);
+#ifdef __APPLE__
+    if (::shutdown(socket->value, how)) {
+        sockaddr_storage peer{};
+        socklen_t peerLength = sizeof(peer);
+        if (errno != ENOTCONN || how == 1 || ::getpeername(socket->value, reinterpret_cast<sockaddr*>(&peer), &peerLength) != 0) return Fail(NativeError());
+        if (how == 2 && ::shutdown(socket->value, SHUT_WR)) return Fail(NativeError());
+    }
+#else
     if (::shutdown(socket->value, how)) return Fail(NativeError());
+#endif
     std::lock_guard lock(socket->modeMutex);
     if (how != 1) socket->receiveShut = true;
     if (how != 0) socket->sendShut = true;
