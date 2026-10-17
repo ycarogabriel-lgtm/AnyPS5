@@ -16,14 +16,8 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <new>
-#include <typeinfo>
 
 extern "C" int* APS5_VABI __error_nid_postfix();
-#ifdef __APPLE__
-extern "C" void* APS5_VABI __cxa_allocate_exception_nid_postfix(std::size_t size);
-extern "C" [[noreturn]] void APS5_VABI __cxa_throw_nid_postfix(void* object, std::type_info* type, void (*destructor)(void*));
-#endif
 extern "C" int APS5_VABI getpid_nid_postfix(void);
 extern "C" Pthread APS5_VABI scePthreadSelf(void);
 
@@ -332,27 +326,9 @@ std::chrono::microseconds RemainingAlarm(const AlarmState& alarms, std::chrono::
     return std::chrono::duration_cast<std::chrono::microseconds>(*alarms.deadline - now);
 }
 
-#ifdef __APPLE__
-[[noreturn]] void ThrowThroughGuestRuntime(const std::runtime_error& error) {
-    void* object = __cxa_allocate_exception_nid_postfix(sizeof(std::runtime_error));
-    new (object) std::runtime_error(error);
-    __cxa_throw_nid_postfix(object, const_cast<std::type_info*>(&typeid(std::runtime_error)), [](void* exception) { static_cast<std::runtime_error*>(exception)->~runtime_error(); });
-}
-#endif
-
 void NotifyAlarms(AlarmState& alarms) {
     if (!alarms.threadStarted) {
-#ifdef __APPLE__
-        std::thread([] {
-            try {
-                RunAlarms();
-            } catch (const std::runtime_error& error) {
-                ThrowThroughGuestRuntime(error);
-            }
-        }).detach();
-#else
         std::thread(RunAlarms).detach();
-#endif
         alarms.threadStarted = true;
     }
     alarms.changed.notify_all();

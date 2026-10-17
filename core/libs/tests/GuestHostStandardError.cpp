@@ -97,11 +97,7 @@ int main() {
         const auto terminated = Run(redirect, probe, true);
         Require(WIFSIGNALED(terminated.status) && WTERMSIG(terminated.status) == SIGABRT);
         Require(terminated.host.rfind("host\n", 0) == 0);
-#ifdef __APPLE__
-        Require(terminated.host.find("libc++abi: terminating due to uncaught exception of type std::runtime_error: report kept\n") != std::string::npos);
-#else
         Require(terminated.host.find("  what():  report kept\n") != std::string::npos);
-#endif
         if (redirect == Redirect::Reopen) Require(Contents(probe).find("report kept") == std::string::npos);
     }
     std::filesystem::remove(probe);
