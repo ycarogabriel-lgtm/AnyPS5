@@ -453,6 +453,36 @@ int APS5_VABI sceKernelGetModuleInfo(KernelModule, ModuleInfo*) {
     NotImplemented_nid_no_patch(__func__);
     return 0;
 }
+
+std::int32_t APS5_VABI sceKernelGetLibkernelTextLocation_nid_postfix(void** address, std::size_t* size) {
+    if (!address || !size) throw std::invalid_argument("sceKernelGetLibkernelTextLocation: null argument");
+    struct MainSearch {
+        ModuleInfo info{};
+        bool found = false;
+    } search;
+    dl_iterate_phdr([](dl_phdr_info* image, std::size_t, void* data) {
+        auto& found = *static_cast<MainSearch*>(data);
+        if (image->dlpi_name == nullptr || image->dlpi_name[0] != '\0') return 0;
+        Fill(*image, found.info);
+        found.found = true;
+        return 1;
+    }, &search);
+    if (!search.found || search.info.segment_count == 0)
+        throw std::runtime_error("sceKernelGetLibkernelTextLocation: the main program has no segments");
+    *address = reinterpret_cast<void*>(static_cast<std::uintptr_t>(search.info.segments[0].address));
+    *size = search.info.segments[0].size;
+    return 0;
+}
+
+std::int32_t APS5_VABI sceKernelInternalMemoryGetModuleSegmentInfo_nid_postfix(InternalSegmentInfo* result) {
+    if (!result) throw std::invalid_argument("sceKernelInternalMemoryGetModuleSegmentInfo: result is null");
+    void* address = nullptr;
+    std::size_t size = 0;
+    const auto status = sceKernelGetLibkernelTextLocation_nid_postfix(&address, &size);
+    if (status != 0) return status;
+    *result = {reinterpret_cast<std::uintptr_t>(address), size};
+    return 0;
+}
 #else
 int APS5_VABI sceKernelGetModuleList(KernelModule* handles, std::size_t count, std::size_t* actual) {
     return FillModuleList(handles, count, actual, false);
