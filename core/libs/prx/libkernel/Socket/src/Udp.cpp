@@ -49,6 +49,11 @@
 #include <vector>
 
 extern "C" int* APS5_VABI __error_nid_postfix();
+#ifdef __APPLE__
+namespace GuestSockets {
+bool HostSocketListening(int handle);
+}
+#endif
 namespace {
 #ifdef _WIN32
 using NativeSocket = SOCKET;
@@ -251,9 +256,13 @@ std::uint16_t& PortOf(sockaddr_storage& address) {
     return address.ss_family == AF_INET ? reinterpret_cast<sockaddr_in&>(address).sin_port : reinterpret_cast<sockaddr_in6&>(address).sin6_port;
 }
 bool Listening(const Socket& socket) {
+#ifdef __APPLE__
+    return GuestSockets::HostSocketListening(static_cast<int>(socket.value));
+#else
     int listening = 0;
     socklen_t size = sizeof(listening);
     return ::getsockopt(socket.value, SOL_SOCKET, SO_ACCEPTCONN, reinterpret_cast<char*>(&listening), &size) == 0 && listening != 0;
+#endif
 }
 int Disconnect(const Socket& socket) {
     sockaddr_storage peer{};

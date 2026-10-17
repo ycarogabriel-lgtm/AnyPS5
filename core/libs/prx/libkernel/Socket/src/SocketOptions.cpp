@@ -241,3 +241,12 @@ int GetTcpLevelOption(std::uintptr_t native, bool tcp, int option, void* value, 
 }
 
 }
+
+#ifdef __APPLE__
+namespace GuestSockets {
+bool HostSocketListening(int handle) {
+    socket_fdinfo info{};
+    return proc_pidfdinfo(::getpid(), handle, PROC_PIDFDSOCKETINFO, &info, sizeof(info)) == static_cast<int>(sizeof(info)) && (info.psi.soi_options & SO_ACCEPTCONN) != 0;
+}
+}
+#endif
