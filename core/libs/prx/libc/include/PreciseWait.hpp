@@ -129,7 +129,12 @@ inline void PreciseSpinPause() {
 
 inline std::uint64_t PreciseMonotonicNanos() {
     struct timespec ts;
+#ifdef __APPLE__
+    // Match libc++ steady_clock's uptime clock; CLOCK_MONOTONIC is adjusted by the host.
+    clock_gettime(CLOCK_UPTIME_RAW, &ts);
+#else
     clock_gettime(CLOCK_MONOTONIC, &ts);
+#endif
     return static_cast<std::uint64_t>(ts.tv_sec) * 1000000000ULL + static_cast<std::uint64_t>(ts.tv_nsec);
 }
 
