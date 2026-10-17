@@ -93,3 +93,22 @@ Na branch `macos/integration` (`bbd10b011`), com esse MoltenVK: **590 selecionad
 ## Primeiro título
 
 DOOM Shareware (homebrew PPSA99666 v1.1.1, `lowbit/ps5-doom`, SHA-256 conferido), `tools/unwrap_self.py` no `eboot.bin` e no `sce_module/libc.prx`, `relinker --macos --to-rosetta`, bibliotecas de `macos/integration` em `2426107cf`, este MoltenVK: passa do launcher, carrega `doom1.wad` e desenha o menu de episódios sobre a demo (quadros salvos com `APS5_DUMP_FRAMES`). A correção necessária foi `sceKernelInternalMemoryGetModuleSegmentInfo` no macOS.
+
+## Estado em `macos/integration` b65145002
+
+Com o MoltenVK acima: **590 selecionados, 576 passam, 14 falham** (eram 30); todos os 640 testes sem GPU passam. Corrigidos nesta etapa: `front_face_all_bits` (saída float4 de exportação 32 bits crua num destino inteiro, que o Metal recusa: a especialização agora faz bitcast para uint4/int4) e `sample_mask_multisample` (máscara uniforme sob sombreamento por amostra, que o Metal ignora na saída `sample_mask`: o shader aplica a máscara usando o bit do próprio `SampleId`).
+
+Falhas restantes:
+
+| Grupo | Testes | Situação |
+|---|---|---|
+| Limite do Metal/MoltenVK | `vertex_clip_cull_distances`, `vertex_clip_cull_draw`, `vertex_clip_cull_draw_no_key`, `vertex_user_data_tail` (cull distance), `image_plane_bias_on_single_level_volume` (redução min/max) | Sem recurso no dispositivo |
+| Tininess numérica | `f32_constant_factor_tininess`, `f32_denormal_flush` | Semântica de arredondamento do Metal |
+| SPIRV-Cross | `pixel_interlock` (`raster_order_group` num campo de argument buffer) | Sem issue aberta upstream |
+| Tessellation | `tessellation` | Índice de patch entre instâncias, MoltenVK emula com compute |
+| Memória do host | `multisample_guest_access`, `gpu_indirect_arguments_misaligned_writer_ahead` (escrita GPU em página de memória direta com várias vistas, devolução "não implementada" quando a importação cai para cópia) | Lacuna do runtime macOS |
+| Instáveis | `store_over_untracked` (falha também sem estas mudanças), `cross_workgroup_flag` (1 de 3 com o MoltenVK novo) | A investigar |
+
+## DOOM jogável
+
+Com o launcher, o episódio 1 abre: jogador no E1M1 com HUD (vida 100%, munição 48 depois de dois tiros), andando e atirando por entrada de controle via `APS5_PAD_INPUT_FILE`. Cerca de 600 apresentações em 30 s no M1 sob Rosetta.
