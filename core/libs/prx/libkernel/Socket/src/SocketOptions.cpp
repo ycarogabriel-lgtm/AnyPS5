@@ -1,3 +1,8 @@
+#ifdef __APPLE__
+#include <libproc.h>
+#include <sys/proc_info.h>
+#include <unistd.h>
+#endif
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
@@ -179,10 +184,16 @@ int GetSocketLevelOption(std::uintptr_t native, SocketOptionState& state, int ty
         if (::getsockopt(handle, SOL_SOCKET, nativeOption, reinterpret_cast<NativeOptionOutput>(&enabled), &size)) return HostError();
         number = enabled != 0 ? option : 0;
     } else if (option == GuestAcceptConnection) {
+#ifdef __APPLE__
+        socket_fdinfo info{};
+        if (proc_pidfdinfo(::getpid(), static_cast<int>(handle), PROC_PIDFDSOCKETINFO, &info, sizeof(info)) != static_cast<int>(sizeof(info))) return HostError();
+        number = (info.psi.soi_options & SO_ACCEPTCONN) != 0 ? GuestAcceptConnection : 0;
+#else
         int listening = 0;
         socklen_t size = sizeof(listening);
         if (::getsockopt(handle, SOL_SOCKET, SO_ACCEPTCONN, reinterpret_cast<NativeOptionOutput>(&listening), &size)) return HostError();
         number = listening != 0 ? GuestAcceptConnection : 0;
+#endif
     } else if (option == GuestType) {
         number = type;
     } else if (option == GuestNoSigpipe) {
