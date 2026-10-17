@@ -13,17 +13,16 @@ struct OpenFileLimit {
     OpenFileLimit() {
         rlimit limit{};
         if (getrlimit(RLIMIT_NOFILE, &limit) != 0) throw std::system_error(errno, std::generic_category(), "read open file limit");
+        rlim_t usable = limit.rlim_max;
 #ifdef __APPLE__
         int perProcess = 0;
         std::size_t size = sizeof(perProcess);
         if (sysctlbyname("kern.maxfilesperproc", &perProcess, &size, nullptr, 0) != 0) throw std::system_error(errno, std::generic_category(), "read kern.maxfilesperproc");
-        const auto ceiling = static_cast<rlim_t>(perProcess);
-        if (limit.rlim_max > ceiling) limit.rlim_max = ceiling;
-        if (limit.rlim_cur == limit.rlim_max) return;
-#else
-        if (limit.rlim_cur >= limit.rlim_max) return;
+        if (perProcess > 0 && static_cast<rlim_t>(perProcess) < usable) usable = static_cast<rlim_t>(perProcess);
 #endif
-        limit.rlim_cur = limit.rlim_max;
+        if (limit.rlim_cur == usable && limit.rlim_max == usable) return;
+        limit.rlim_cur = usable;
+        limit.rlim_max = usable;
         if (setrlimit(RLIMIT_NOFILE, &limit) != 0) throw std::system_error(errno, std::generic_category(), "raise open file limit");
     }
 } openFileLimit;
