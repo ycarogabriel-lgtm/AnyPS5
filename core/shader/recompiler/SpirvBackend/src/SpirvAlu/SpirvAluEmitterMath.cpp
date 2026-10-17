@@ -186,9 +186,13 @@ std::uint32_t EmitDsMaskedLaneRead(SpirvEmitterState& state, std::uint32_t sourc
     if (state.laneCount == 2) {
         lane = Binary(state, spv::OpBitwiseAnd, TypeU32(state), lane, ConstantU32(state, 31u));
     }
-    const auto physicalLane = EmitHostSubgroupLane(state, lane);
-    const auto shuffled = EmitLaneShuffle(state, TypeU32(state), source, physicalLane);
-    const auto sourceExec = EmitLaneShuffle(state, TypeBool(state), exec, physicalLane);
+    const auto shuffledRaw = state.module.AllocateId();
+    EmitSubgroupShuffleInHalf(state, TypeU32(state), shuffledRaw, source, lane);
+    const auto sourceExecRaw = state.module.AllocateId();
+    EmitSubgroupShuffleInHalf(state, TypeBool(state), sourceExecRaw, exec, lane);
+    const bool convergent = !HostSubgroupSingleLane(state);
+    const auto shuffled = convergent ? EmitConvergentResult(state, TypeU32(state), shuffledRaw) : shuffledRaw;
+    const auto sourceExec = convergent ? EmitConvergentResult(state, TypeBool(state), sourceExecRaw) : sourceExecRaw;
     const auto sourceActive = Binary(state, spv::OpLogicalAnd, TypeBool(state), sourceExec, EmitSubgroupLaneActiveBool(state, lane));
     return Select(state, TypeU32(state), sourceActive, shuffled, ConstantU32(state, 0u));
 }
@@ -564,7 +568,7 @@ std::optional<HalfWaveScan> MatchHalfWaveScan(const IrValue* value, IrShaderStag
 
 std::optional<std::uint32_t> EmitHalfWaveReduction(SpirvValueEmitContext& ctx, const IrValue& inst, std::uint32_t lane) {
     auto& state = ctx.state;
-    if (state.program.WaveSize() != 64u || (lane & 31u) != 31u) return std::nullopt;
+    if (state.program.WaveSize() != 64u || (lane & 31u) != 31u || state.spannedWave) return std::nullopt;
     const auto stage = state.program.Resources().stage;
     auto scan = MatchHalfWaveScan(inst.Argument(0), stage, false);
     const bool narrow = !scan && HostSubgroupNarrowerThanWave(state) && state.hostSubgroupSize == 32u;
@@ -971,7 +975,7 @@ std::uint32_t EmitDppMoveU32(SpirvValueEmitContext& ctx, const IrValue& inst) {
     auto& state = ctx.state;
     const auto flags = inst.Flags<DppMoveFlags>();
     const auto target = EmitDppTargetLane(state, flags.control);
-    const auto shuffled = ctx.Shuffle(inst, 0, target.lane);
+    const auto shuffled = ctx.ShuffleInHalf(inst, 0, target.lane);
     if (flags.fetchInactive) {
         return EmitNative<spv::OpSelect, IrType::U32>(state, target.valid, shuffled, ConstantU32(state, 0u));
     }
@@ -1081,7 +1085,7 @@ std::uint32_t EmitPermlane16U32(SpirvValueEmitContext& ctx, const IrValue& inst)
     state.module.AddFunction(spv::OpShiftRightLogical, TypeU32(state), shifted, selected, shift);
     state.module.AddFunction(spv::OpBitwiseAnd, TypeU32(state), index, shifted, ConstantU32(state, 15u));
     state.module.AddFunction(spv::OpBitwiseOr, TypeU32(state), target, rowValue, index);
-    const auto shuffled = ctx.Shuffle(inst, 0, target);
+    const auto shuffled = ctx.ShuffleInHalf(inst, 0, target);
     if (flags.fetchInactive) {
         return shuffled;
     }
@@ -1109,9 +1113,9 @@ std::uint32_t EmitPermuteU32(SpirvValueEmitContext& ctx, const IrValue& inst) {
     auto result = ConstantU32(state, 0u);
     for (std::uint32_t source = 0; source < 32u; ++source) {
         const auto from = Binary(state, spv::OpBitwiseOr, TypeU32(state), base, ConstantU32(state, source));
-        const auto value = ctx.Shuffle(inst, 0, from);
-        const auto address = ctx.Shuffle(inst, 1, from);
-        const auto active = ctx.Shuffle(inst, 2, from);
+        const auto value = ctx.ShuffleInHalf(inst, 0, from);
+        const auto address = ctx.ShuffleInHalf(inst, 1, from);
+        const auto active = ctx.ShuffleInHalf(inst, 2, from);
         const auto target = Binary(state, spv::OpBitwiseAnd, TypeU32(state), Binary(state, spv::OpShiftRightLogical, TypeU32(state), address, ConstantU32(state, 2u)), ConstantU32(state, 31u));
         const auto hit = Binary(state, spv::OpLogicalAnd, TypeBool(state), active, Binary(state, spv::OpIEqual, TypeBool(state), target, own));
         result = Select(state, TypeU32(state), hit, value, result);
