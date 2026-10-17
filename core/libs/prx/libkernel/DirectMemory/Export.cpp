@@ -723,7 +723,7 @@ int APS5_VABI sceKernelMunlock_nid_postfix(void* address, std::uint64_t length) 
 }
 
 int APS5_VABI sceKernelMunlockall_nid_postfix() {
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
     ::munlockall();
 #endif
     std::map<uintptr_t, size_t> ranges;
@@ -749,6 +749,10 @@ int APS5_VABI sceKernelMunlockall_nid_postfix() {
             cursor = next;
         }
     }
+#elif defined(__APPLE__)
+    const int saved = errno;
+    for (const auto& [start, len] : ranges) ::munlock(reinterpret_cast<void*>(start), len);
+    errno = saved;
 #endif
     return 0;
 }
