@@ -6429,6 +6429,7 @@ void unorm10_11_11TargetTests() {
     expectFailure([&] { validate(unpacked, state); }, "uint4 words to its packed 10_11_11 unorm attachments");
     auto plainState = state;
     plainState.colors[0].packing = ColorExportPacking::None;
+    plainState.colors[0].format = VK_FORMAT_R8G8B8A8_UNORM;
     expectFailure([&] { validate(packed, plainState); }, "float4 colors");
     auto uintExport = request;
     uintExport.context.pixel->targetOutputMode[0] = 7;

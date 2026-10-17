@@ -152,6 +152,7 @@ State DecodeState(const QueueState& queue, bool vertexWorkgroup = false);
 std::array<VkSampleLocationEXT, 32> SampleLocations(const State& state);
 VkExtent2D SampleLocationGrid(const State& state);
 std::array<std::uint8_t, 8> ExportMappings(const State& state);
+ShaderRecompiler::ColorExportPacking RawIntegerExport(VkFormat format);
 std::array<ShaderRecompiler::ColorExportPacking, 8> ExportPackings(const State& state);
 ShaderRecompiler::RasterPrimitive RasterPrimitiveOf(const State& state);
 bool PartialSampleMask(const State& state);
@@ -159,6 +160,7 @@ bool UniformSampleMask(const State& state);
 VkSampleMask HostSampleMask(const State& state);
 std::uint8_t QuadPixelMask(const State& state);
 std::array<std::uint16_t, 4> QuadSampleMasks(const State& state);
+std::array<std::uint16_t, 4> QuadSampleMasks(const State& state, bool sampleShading);
 ColorTarget DecodeColorBuffer(const Registers& context, std::uint32_t slot, bool allowMultisampleDcc = false);
 struct ReversedBlend {
     VkPipelineColorBlendAttachmentState blend;

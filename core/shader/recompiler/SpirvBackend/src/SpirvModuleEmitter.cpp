@@ -1209,7 +1209,19 @@ void EmitProgram(SpirvEmitterState& state) {
             state.module.AddFunction(spv::OpAccessChain, TypePointer(state, spv::StorageClassInput, TypeI32(state)), pointer, state.sampleMaskInputVariable, ConstantU32(state, 0u));
             const auto rasterized = state.module.AllocateId();
             state.module.AddFunction(spv::OpLoad, TypeI32(state), rasterized, pointer);
-            bit = EmitBinaryU32(state, spv::OpBitwiseAnd, Unary(state, spv::OpBitcast, TypeU32(state), rasterized), covered);
+            auto ownSamples = Unary(state, spv::OpBitcast, TypeU32(state), rasterized);
+            if (pixel.psSampleShading) {
+                std::uint32_t sample = 0;
+                if (state.ownSampleIdVariable != 0) {
+                    const auto loaded = state.module.AllocateId();
+                    state.module.AddFunction(spv::OpLoad, TypeI32(state), loaded, state.ownSampleIdVariable);
+                    sample = Unary(state, spv::OpBitcast, TypeU32(state), loaded);
+                } else {
+                    sample = EmitBuiltinU32(state, StageInputKind::SampleId, 0u);
+                }
+                ownSamples = EmitBinaryU32(state, spv::OpBitwiseAnd, ownSamples, EmitBinaryU32(state, spv::OpShiftLeftLogical, ConstantU32(state, 1u), sample));
+            }
+            bit = EmitBinaryU32(state, spv::OpBitwiseAnd, ownSamples, covered);
             state.quadSampleCoverage = Unary(state, spv::OpBitcast, TypeI32(state), covered);
         }
         const auto mask = static_cast<std::uint32_t>(pixel.quadPixelMask);
