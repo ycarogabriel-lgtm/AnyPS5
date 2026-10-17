@@ -1494,13 +1494,14 @@ std::string HexText(std::uint64_t value) {
 
 void ValidateDescriptorLayout(const Context& context, std::span<const VkDescriptorSetLayoutBinding> bindings, bool updateAfterBind) {
     const auto& indexing = context.descriptorIndexingLimits;
+    const auto pick = [&](std::uint32_t plain, std::uint32_t afterBind) { return updateAfterBind ? std::max(plain, afterBind) : plain; };
     const auto maxStageResources = updateAfterBind ? indexing.maxPerStageUpdateAfterBindResources : context.limits.maxPerStageResources;
-    const auto maxStageSampledImages = updateAfterBind ? indexing.maxPerStageDescriptorUpdateAfterBindSampledImages : context.limits.maxPerStageDescriptorSampledImages;
-    const auto maxStageStorageImages = updateAfterBind ? indexing.maxPerStageDescriptorUpdateAfterBindStorageImages : context.limits.maxPerStageDescriptorStorageImages;
-    const auto maxStageSamplers = updateAfterBind ? indexing.maxPerStageDescriptorUpdateAfterBindSamplers : context.limits.maxPerStageDescriptorSamplers;
-    const auto maxSetSampledImages = updateAfterBind ? indexing.maxDescriptorSetUpdateAfterBindSampledImages : context.limits.maxDescriptorSetSampledImages;
-    const auto maxSetStorageImages = updateAfterBind ? indexing.maxDescriptorSetUpdateAfterBindStorageImages : context.limits.maxDescriptorSetStorageImages;
-    const auto maxSetSamplers = updateAfterBind ? indexing.maxDescriptorSetUpdateAfterBindSamplers : context.limits.maxDescriptorSetSamplers;
+    const auto maxStageSampledImages = pick(context.limits.maxPerStageDescriptorSampledImages, indexing.maxPerStageDescriptorUpdateAfterBindSampledImages);
+    const auto maxStageStorageImages = pick(context.limits.maxPerStageDescriptorStorageImages, indexing.maxPerStageDescriptorUpdateAfterBindStorageImages);
+    const auto maxStageSamplers = pick(context.limits.maxPerStageDescriptorSamplers, indexing.maxPerStageDescriptorUpdateAfterBindSamplers);
+    const auto maxSetSampledImages = pick(context.limits.maxDescriptorSetSampledImages, indexing.maxDescriptorSetUpdateAfterBindSampledImages);
+    const auto maxSetStorageImages = pick(context.limits.maxDescriptorSetStorageImages, indexing.maxDescriptorSetUpdateAfterBindStorageImages);
+    const auto maxSetSamplers = pick(context.limits.maxDescriptorSetSamplers, indexing.maxDescriptorSetUpdateAfterBindSamplers);
     std::map<VkDescriptorType, std::uint64_t> heapTotals;
     std::map<std::pair<VkShaderStageFlags, VkDescriptorType>, std::uint64_t> stageTotals;
     std::map<VkShaderStageFlags, std::uint64_t> stageResources;
@@ -3443,7 +3444,7 @@ constexpr std::array<VkDescriptorPoolSize, 4> ChainPoolCreateSizes{{{VK_DESCRIPT
 DescriptorCache::SetAllocation DescriptorCache::Allocate(VkDescriptorSetLayout layout, std::span<const VkDescriptorPoolSize> sizes, bool updateAfterBind, std::optional<std::uint32_t> variableCount) {
     bool fits = true;
     for (const auto& size : sizes) {
-        const auto limit = updateAfterBind ? UpdateAfterBindSetDescriptorLimit(context.descriptorIndexingLimits, size.type) : SetDescriptorLimit(context.limits, size.type);
+        const auto limit = updateAfterBind ? std::max(SetDescriptorLimit(context.limits, size.type), UpdateAfterBindSetDescriptorLimit(context.descriptorIndexingLimits, size.type)) : SetDescriptorLimit(context.limits, size.type);
         Require(size.descriptorCount <= limit, "descriptor set exceeds the device's per-set descriptor limit");
         const auto capacity = std::find_if(ChainPoolSizes.begin(), ChainPoolSizes.end(), [&](const auto& item) { return item.type == size.type; });
         if (capacity == ChainPoolSizes.end() || size.descriptorCount > capacity->descriptorCount) fits = false;
