@@ -65,9 +65,9 @@ static std::size_t OpenHandles() {
     return count;
 #else
 #ifdef __APPLE__
-    constexpr auto descriptors = "/dev/fd";
+    const std::filesystem::path descriptors = "/dev/fd";
 #else
-    constexpr auto descriptors = "/proc/self/fd";
+    const std::filesystem::path descriptors = "/proc/self/fd";
 #endif
     return static_cast<std::size_t>(std::distance(std::filesystem::directory_iterator(descriptors),
         std::filesystem::directory_iterator{}));
