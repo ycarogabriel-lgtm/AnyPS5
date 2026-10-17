@@ -30,6 +30,9 @@
 #include "prx/libkernel/Socket/include/SocketPoll.hpp"
 #include <algorithm>
 #include <chrono>
+#ifdef __APPLE__
+#include <sys/select.h>
+#endif
 #include <climits>
 #include <cstdint>
 #include <cstring>
@@ -1457,6 +1460,41 @@ int APS5_VABI poll_nid_postfix(GuestPollDescriptor* descriptors, std::uint32_t c
             return ready;
         }
     }
+#elif defined(__APPLE__)
+    const auto urgent = [&] {
+        bool any = false;
+        for (std::size_t i = 0; i < socketCount; ++i) {
+            if (!(descriptors[owners[i]].events & GuestPollPriority)) continue;
+            if (native[i].fd < 0 || native[i].fd >= FD_SETSIZE) continue;
+            fd_set exceptional;
+            FD_ZERO(&exceptional);
+            FD_SET(native[i].fd, &exceptional);
+            timeval now{};
+            if (::select(native[i].fd + 1, nullptr, nullptr, &exceptional, &now) == 1) {
+                native[i].revents = static_cast<short>(native[i].revents | NativePollPriority);
+                any = true;
+            }
+        }
+        return any;
+    };
+    bool watchUrgent = false;
+    for (std::size_t i = 0; i < socketCount; ++i)
+        if (descriptors[owners[i]].events & GuestPollPriority) watchUrgent = true;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout < 0 ? 0 : timeout);
+    for (;;) {
+        int wait = ready ? 0 : timeout;
+        if (watchUrgent && wait != 0) {
+            const auto left = timeout < 0 ? 5LL : std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
+            wait = static_cast<int>(std::clamp<long long>(left, 0, 5));
+        }
+        const int result = ::poll(native.data(), static_cast<nfds_t>(native.size()), wait);
+        if (result < 0) return Fail(NativeError());
+        const bool flagged = watchUrgent && urgent();
+        const bool expired = timeout >= 0 && std::chrono::steady_clock::now() >= deadline;
+        if (result > 0 || flagged || ready || !watchUrgent || expired) break;
+    }
+    for (std::size_t i = 0; i < native.size(); ++i) collect(i, i >= socketCount);
+    return ready;
 #else
     const int wait = ready ? 0 : timeout;
     const int result = ::poll(native.data(), static_cast<nfds_t>(native.size()), wait);
