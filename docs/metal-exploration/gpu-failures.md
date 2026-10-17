@@ -64,3 +64,14 @@ Recursos anunciados pelo dispositivo (`vulkaninfo`, x86-64 e arm64 iguais): `run
 | Compilação MSL | `pixel_interlock` (`raster_order_group` em campo de argument buffer), `front_face_all_bits` (render pipeline) | MoltenVK/SPIRV-Cross |
 | Write watch / memória do host | `write_tracking`, `multisample_guest_access`, `gpu_indirect_arguments_misaligned_writer_ahead` | Runtime macOS (proteção de páginas importadas, escrita GPU em página com várias vistas) |
 | Tessellation | `tessellation` (canal azul do índice de patch entre instâncias) | Indefinido; MoltenVK emula tessellation com compute |
+
+## Depois das correções desta branch
+
+Mesma máquina e seleção, após `1c772b1b4` (layer sem `Geometry`) e `6fb4e2f18` + seguinte (tabelas por limites update-after-bind). Log em `build-metal/ctest-agc-after.log`.
+
+- Corrigidos (10): `bindless_images`, `image_sint8`, `image_table`, `image_table_cache_bounds`, `image_table_reuse`, `layered_volume_draw`, `layered_volume_vertex`, `layered_volume_vertex_no_gpl`, `pixel_ancillary_word`, `relative_ancillary`. `sample_mask_multisample` passa da criação do pipeline e falha na máscara de amostras por amostra.
+- `graphics` falhou na rodada completa por um contexto de teste que só preenche os limites update-after-bind de storage buffers; corrigido no commit seguinte (o set update-after-bind usa o maior dos dois limites) e passa.
+- `stream_copy`: 17 a 29 s contra o limite de 30 s; passa isolado em 5 de 5, estourou o tempo uma vez na rodada completa.
+- `store_over_untracked` ("the result did not reach a block the CPU left alone"): passou na rodada de 17/10 00:30, mas falha hoje 3 de 3 também com as fontes anteriores a estas correções e no build `macos/integration`; não é regressão desta branch. Depende de estado da máquina ainda não identificado (não muda com `ANYPS5_NO_SHADER_CACHE=1` nem `APS5_NO_WRITE_WATCH=1`).
+
+Resultado esperado com as correções: 20 falhas das 30 originais, das quais 5 são limites reais do Metal/MoltenVK (cull distance, redução min/max) e 6 dependem de um MoltenVK com SPIRV-Cross #2704.
