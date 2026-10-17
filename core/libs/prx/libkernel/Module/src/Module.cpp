@@ -147,7 +147,7 @@ extern "C" void ForgetUnloadedUnwindImages_nid_no_patch() {
   std::lock_guard lock(unwindImagesMutex);
   for (const auto base : unloaded) UnwindImages().erase(base);
 }
-#elif !defined(__APPLE__)
+#else
 extern "C" int APS5_VABI sceKernelGetModuleInfoFromAddr(std::uint64_t address, int flags, ModuleInfoEx* info);
 
 namespace {
@@ -265,7 +265,10 @@ int APS5_VABI sceKernelGetModuleInfoForUnwind(uint64_t addr, int flags, ModuleIn
     search.found = true;
     return 1;
   }, &search);
-  if (search.found) return 0;
+  if (search.found) {
+    if (IsRelinkedImage(addr)) FillGuestUnwindInfo(addr, info);
+    return 0;
+  }
   Dl_info image {};
   if (!dladdr(reinterpret_cast<void*>(addr), &image) || image.dli_fbase == nullptr) return SCE_KERNEL_ERROR_ESRCH;
   unsigned long textSize = 0;

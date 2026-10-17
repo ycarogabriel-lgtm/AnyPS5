@@ -591,8 +591,6 @@ void testCompressedPresentation() {
     LibcRunShutdown_nid_postfix();
 }
 
-// Flips of two buffers submitted without waiting for each other: every one completes in order
-// (presentations trail on the GPU, APS5_FLIP_INFLIGHT), and the shutdown retires the ones in flight.
 void testBackToBack() {
     const int handle = sceVideoOutOpen(255, 0, 0, nullptr);
     auto cfg = VideoOutDriver::Get().GetConfig(handle);
@@ -997,7 +995,6 @@ int runTests(int argc, char** argv) {
 
 int main(int argc, char** argv) {
 #ifdef __APPLE__
-    // AppKit needs the main thread: run the tests the way a relinked guest runs (Aps5StartGuest).
     static int arguments;
     static char** values;
     arguments = argc;

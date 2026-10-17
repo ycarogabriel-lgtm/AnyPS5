@@ -20,6 +20,8 @@
 #endif
 #include <windows.h>
 #elif defined(__APPLE__)
+#include "prx/libc/include/specifics/linux/ElfTypes.hpp"
+#include <cstring>
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
 #else
@@ -65,11 +67,7 @@ void* Symbol(Module& module, const char* name) {
 #endif
 }
 #ifndef _WIN32
-#ifdef __APPLE__
-std::uintptr_t MainProgramBase() {
-    return reinterpret_cast<std::uintptr_t>(_dyld_get_image_header(0));
-}
-#else
+#ifndef __APPLE__
 const link_map* MainProgramMap() {
     static const link_map* const map = [] {
         void* handle = ::dlopen(nullptr, RTLD_LAZY);
@@ -81,13 +79,34 @@ const link_map* MainProgramMap() {
     }();
     return map;
 }
+#else
+std::uintptr_t ImageBase(void* native) {
+    const char* name = nullptr;
+    for (std::uint32_t index = 0; index < _dyld_image_count() && name == nullptr; ++index) {
+        const char* candidate = _dyld_get_image_name(index);
+        void* handle = candidate != nullptr ? ::dlopen(candidate, RTLD_LAZY | RTLD_NOLOAD) : nullptr;
+        if (handle == nullptr) continue;
+        if (handle == native) name = candidate;
+        ::dlclose(handle);
+    }
+    std::pair<const char*, std::uintptr_t> search{name, 0};
+    if (name != nullptr) {
+        dl_iterate_phdr([](dl_phdr_info* image, std::size_t, void* data) {
+            auto& [wanted, base] = *static_cast<std::pair<const char*, std::uintptr_t>*>(data);
+            if (image->dlpi_name == nullptr || std::strcmp(image->dlpi_name, wanted) != 0) return 0;
+            base = image->dlpi_addr;
+            return 1;
+        }, &search);
+    }
+    return search.second;
+}
 #endif
 
 bool FromGuestModule(void* address) {
     Dl_info info{};
 #ifdef __APPLE__
-    if (address == nullptr || !::dladdr(address, &info) || info.dli_fname == nullptr) return false;
-    if (reinterpret_cast<std::uintptr_t>(info.dli_fbase) == MainProgramBase()) return true;
+    if (address == nullptr || !::dladdr(address, &info) || info.dli_fname == nullptr || info.dli_fbase == nullptr) return false;
+    if (info.dli_fbase == _dyld_get_image_header(0)) return true;
 #else
     link_map* image = nullptr;
     if (address == nullptr || !::dladdr1(address, &info, reinterpret_cast<void**>(&image), RTLD_DL_LINKMAP) || info.dli_fname == nullptr || image == nullptr) return false;
@@ -256,7 +275,9 @@ int APS5_VABI dlclose_nid_postfix(void* handle) {
         GuestAllocations::Mutation mutation;
 #ifdef _WIN32
         mutation.UnregisterImage(module->native);
-#elif !defined(__APPLE__)
+#elif defined(__APPLE__)
+        mutation.UnregisterImage(reinterpret_cast<const void*>(ImageBase(module->native)));
+#else
         mutation.UnregisterImage(reinterpret_cast<const void*>(static_cast<link_map*>(module->native)->l_addr));
 #endif
     }

@@ -32,8 +32,10 @@ add_library(libkernel SHARED EXCLUDE_FROM_ALL
         ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/src/Attr.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/src/Thread.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/src/Tsd.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/src/GuestTlsMacOs.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/src/Rwlock.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/src/Sem.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/src/MainThreadMacOs.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/Posix/Atfork.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/Posix/Attr.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/Pthread/Posix/Barrier.cpp
@@ -77,6 +79,9 @@ add_library(libkernel SHARED EXCLUDE_FROM_ALL
         ${CMAKE_CURRENT_SOURCE_DIR}/AppMetadata/src/AppMetadata.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/AppMetadata/src/ParamJsonParser.cpp
 )
+if(APPLE)
+    target_link_libraries(libkernel PRIVATE "-framework CoreFoundation")
+endif()
 
 if(APPLE)
     target_sources(libkernel PRIVATE
@@ -187,10 +192,12 @@ if(BUILD_TESTING)
     configure_windows_unwind(guest_module_fixture)
     set_target_properties(guest_module_fixture PROPERTIES BUILD_WITH_INSTALL_RPATH ON INSTALL_RPATH "${ANYPS5_PRX_RPATH}")
     find_package(Python3 QUIET COMPONENTS Interpreter)
-    if(Python3_Interpreter_FOUND AND NOT WIN32 AND NOT APPLE)
-        target_link_options(guest_module_fixture PRIVATE -Wl,--no-as-needed)
-        add_test(NAME nid_patcher_dynamic_strings COMMAND ${Python3_EXECUTABLE}
-            ${LIBS_INCLUDE_DIR}/nid/tests/test_dynamic_strings.py $<TARGET_FILE:guest_module_fixture>)
+    if(Python3_Interpreter_FOUND AND NOT WIN32)
+        if(NOT APPLE)
+            target_link_options(guest_module_fixture PRIVATE -Wl,--no-as-needed)
+            add_test(NAME nid_patcher_dynamic_strings COMMAND ${Python3_EXECUTABLE}
+                ${LIBS_INCLUDE_DIR}/nid/tests/test_dynamic_strings.py $<TARGET_FILE:guest_module_fixture>)
+        endif()
         add_test(NAME nid_patcher_symbol_versions COMMAND ${Python3_EXECUTABLE}
             ${LIBS_INCLUDE_DIR}/nid/tests/test_symbol_versions.py $<TARGET_FILE:nid_patcher>)
     endif()

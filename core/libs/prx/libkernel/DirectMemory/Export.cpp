@@ -645,8 +645,6 @@ int UnlockHostPages(std::uintptr_t start, std::uintptr_t end) {
 }
 #else
 #ifdef __APPLE__
-// macOS wires inaccessible pages, which FreeBSD and Linux refuse with ENOMEM; reserved ranges are
-// such pages.
 bool HasInaccessiblePages(std::uintptr_t start, std::uintptr_t end) {
     for (auto address = static_cast<mach_vm_address_t>(start); address < end;) {
         auto region = address;

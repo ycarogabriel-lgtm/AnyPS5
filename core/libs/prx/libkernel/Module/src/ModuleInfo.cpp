@@ -22,6 +22,12 @@
 #include <filesystem>
 #elif defined(__APPLE__)
 #include <dlfcn.h>
+#include <filesystem>
+#include <mach-o/dyld.h>
+#include <mutex>
+#include <system_error>
+#include <unordered_map>
+#include "prx/libc/include/specifics/linux/ElfTypes.hpp"
 #include "prx/libc/include/specifics/linux/ElfTypes.hpp"
 #include "prx/libc/include/specifics/macos/ExecutablePath.hpp"
 #else
@@ -199,10 +205,16 @@ std::vector<GuestImage> GuestImages() {
     std::vector<GuestImage> images;
     for (const auto address : addresses) {
         Dl_info symbol{};
+#ifdef __APPLE__
+        if (!dladdr(reinterpret_cast<const void*>(address), &symbol) || !symbol.dli_fbase)
+            throw std::runtime_error("sceKernelGetModuleList: no Mach-O header for a loaded image");
+        images.push_back({symbol.dli_fbase, address});
+#else
         link_map* native = nullptr;
         if (!dladdr1(reinterpret_cast<const void*>(address), &symbol, reinterpret_cast<void**>(&native), RTLD_DL_LINKMAP) || !native)
             throw std::runtime_error("sceKernelGetModuleList: no link map for a loaded image");
         images.push_back({native, address});
+#endif
     }
     return images;
 }
@@ -228,8 +240,14 @@ std::uint64_t GuestSegmentBytes() {
 
 #ifndef __APPLE__
 bool SystemImage(const GuestImage& image) {
+#ifdef __APPLE__
+    if (image.native == _dyld_get_image_header(0)) return false;
+    Dl_info symbol{};
+    const std::string_view path = dladdr(image.native, &symbol) && symbol.dli_fname ? symbol.dli_fname : "";
+#else
     const auto* name = static_cast<const link_map*>(image.native)->l_name;
     const std::string_view path = name ? name : "";
+#endif
     return !path.empty() && !path.ends_with(GuestModuleSuffix);
 }
 #endif

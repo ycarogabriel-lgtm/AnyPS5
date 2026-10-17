@@ -1167,7 +1167,6 @@ int APS5_VABI ioctl_nid_postfix(int descriptor, std::uint64_t request, void* arg
 #else
     int nativeValue = static_cast<int>(value);
 #ifdef __APPLE__
-    // macOS FIONREAD also counts each datagram's source address; SO_NREAD is the next datagram's size.
     socklen_t valueSize = sizeof(nativeValue);
     const auto result = request == 0x4004667f && socket->type == 2
         ? ::getsockopt(socket->value, SOL_SOCKET, SO_NREAD, &nativeValue, &valueSize)

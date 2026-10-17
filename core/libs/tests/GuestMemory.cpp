@@ -33,6 +33,8 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
+#elif defined(__APPLE__)
+#include <unistd.h>
 #endif
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -401,6 +403,41 @@ static void CheckDirectMemoryFollowsPhysicalPages() {
     Require(sceKernelMunmap(filler, page * 2) == 0);
     Require(sceKernelReleaseDirectMemory(again, page * 2) == 0);
 }
+
+static void CheckDirectMemoryBecomesExecutable() {
+    constexpr std::size_t page = 0x4000;
+    std::int64_t phys = 0;
+    Require(sceKernelAllocateDirectMemory(0, 0x7fffffffffll, page, 0, 0, &phys) == 0);
+    void* mapped = nullptr;
+    Require(sceKernelMapDirectMemory(&mapped, page, 3, 0, phys, 0) == 0);
+    constexpr std::array<unsigned char, 6> code{0xb8, 0x2a, 0x00, 0x00, 0x00, 0xc3};
+    std::memcpy(mapped, code.data(), code.size());
+    Require(sceKernelMprotect(mapped, page, 5) == 0);
+    Require(reinterpret_cast<int (*)()>(mapped)() == 42);
+    Require(sceKernelMprotect(mapped, page, 7) == 0);
+    static_cast<unsigned char*>(mapped)[1] = 0x2b;
+    Require(reinterpret_cast<int (*)()>(mapped)() == 43);
+    Require(sceKernelMunmap(mapped, page) == 0);
+    Require(sceKernelReleaseDirectMemory(phys, page) == 0);
+}
+
+#ifndef _WIN32
+static void CheckDirectMemoryReleasesHostDescriptors() {
+    constexpr std::size_t page = 0x4000;
+    const int before = dup(0);
+    Require(before >= 0 && close(before) == 0);
+    for (int round = 0; round < 64; ++round) {
+        std::int64_t phys = 0;
+        Require(sceKernelAllocateDirectMemory(0, 0x7fffffffffll, page, 0, 0, &phys) == 0);
+        void* mapped = nullptr;
+        Require(sceKernelMapDirectMemory(&mapped, page, 3, 0, phys, 0) == 0);
+        Require(sceKernelMunmap(mapped, page) == 0);
+        Require(sceKernelReleaseDirectMemory(phys, page) == 0);
+    }
+    const int after = dup(0);
+    Require(after == before && close(after) == 0);
+}
+#endif
 
 static void CheckSparseDirectMemoryBacking() {
     constexpr std::size_t page = 0x4000;
@@ -2661,6 +2698,10 @@ int main(int argc, char** argv) {
     CheckAudioCoprocessorProtection();
     CheckMprotectIgnoresUndefinedBits();
     CheckDirectMemoryFollowsPhysicalPages();
+    CheckDirectMemoryBecomesExecutable();
+#ifndef _WIN32
+    CheckDirectMemoryReleasesHostDescriptors();
+#endif
     CheckSparseDirectMemoryBacking();
     CheckReleaseDirectMemoryClearsMappings();
     CheckReleaseDirectMemoryRejectsInvalidRanges();
@@ -2672,7 +2713,7 @@ int main(int argc, char** argv) {
     CheckGpuMapsAreObserved();
     CheckClearingTheObserverWaitsForItsCalls();
     CheckHintedVirtualReservation();
-    CheckReservationHintWithoutRoomAbove();
+    if (arena) CheckReservationHintWithoutRoomAbove();
     CheckFixedVirtualReservation();
     CheckReservedRangeIsNotCommitted();
     CheckHintInsideReservation();

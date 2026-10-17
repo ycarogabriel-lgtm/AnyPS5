@@ -33,6 +33,7 @@
 #elif defined(__APPLE__)
 #include <atomic>
 #include <fcntl.h>
+#include "prx/libc/include/specifics/linux/ElfTypes.hpp"
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <string>
@@ -197,7 +198,6 @@ void* MapAtOrAbove(std::uintptr_t start, size_t len, int prot, size_t alignment)
     throw std::runtime_error("Hinted mmap kept racing with other mappings");
 }
 #elif defined(__APPLE__)
-// The kernel searches for an anywhere allocation from the address passed in, and the mask aligns it.
 void* MapAtOrAbove(std::uintptr_t start, size_t len, int prot, size_t alignment) {
     auto address = static_cast<mach_vm_address_t>(start);
     const auto result = mach_vm_map(mach_task_self(), &address, len, alignment - 1, VM_FLAGS_ANYWHERE, MEMORY_OBJECT_NULL, 0, FALSE, prot, VM_PROT_ALL, VM_INHERIT_DEFAULT);
@@ -209,7 +209,6 @@ void* MapAtOrAbove(std::uintptr_t start, size_t len, int prot, size_t alignment)
     return reinterpret_cast<void*>(address);
 }
 
-// MAP_FIXED_NOREPLACE: a fixed mach_vm_map without VM_FLAGS_OVERWRITE refuses an occupied range.
 void* MapFixedNoReplace(void* addr, size_t len, int prot) {
     auto address = reinterpret_cast<mach_vm_address_t>(addr);
     const auto result = mach_vm_map(mach_task_self(), &address, len, 0, VM_FLAGS_FIXED, MEMORY_OBJECT_NULL, 0, FALSE, prot, VM_PROT_ALL, VM_INHERIT_DEFAULT);
@@ -329,19 +328,10 @@ public:
             throw std::system_error(error, std::system_category(), message);
         }
 #elif defined(__APPLE__)
-        // No memfd on macOS: an anonymous POSIX shared memory object, unlinked right away.
-        static std::atomic<unsigned> sequence {0};
-        char name[32];
-        std::snprintf(name, sizeof(name), "/aps5-dm-%d-%u", static_cast<int>(::getpid()), sequence.fetch_add(1));
-        file = ::shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
-        if (file < 0) throw std::system_error(errno, std::generic_category(), "create direct memory backing");
-        ::shm_unlink(name);
-        ::fcntl(file, F_SETFD, FD_CLOEXEC);
-        if (ftruncate(file, static_cast<off_t>(bytes)) != 0) {
-            const int error = errno;
-            ::close(file);
-            throw std::system_error(error, std::generic_category(), "size direct memory backing");
-        }
+        static_cast<void>(start);
+        memory_object_size_t size = bytes;
+        const auto result = mach_make_memory_entry_64(mach_task_self(), &size, 0, MAP_MEM_NAMED_CREATE | VM_PROT_ALL, &entry, MACH_PORT_NULL);
+        if (result != KERN_SUCCESS) throw std::runtime_error(std::string("create direct memory backing: ") + mach_error_string(result));
 #else
         file = PhysicalFile();
         fileOffset = start;
@@ -369,6 +359,8 @@ public:
 #ifdef _WIN32
         GuestArena::GuestArenaForgetSection_nid_postfix(section);
         CloseHandle(section);
+#elif defined(__APPLE__)
+        mach_port_deallocate(mach_task_self(), entry);
 #else
         if (hostWriteView != nullptr) ::munmap(hostWriteView, bytes);
 #endif
@@ -380,6 +372,10 @@ public:
     void Map(std::uintptr_t address, std::size_t bytes, std::uint64_t offset, int protection) const {
 #ifdef _WIN32
         GuestArena::GuestArenaMapDirect_nid_postfix(reinterpret_cast<void*>(address), bytes, section, offset, WinProtFromPosix(protection));
+#elif defined(__APPLE__)
+        auto target = static_cast<mach_vm_address_t>(address);
+        const auto result = mach_vm_map(mach_task_self(), &target, bytes, 0, VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE, entry, offset, FALSE, protection, VM_PROT_ALL, VM_INHERIT_SHARE);
+        if (result != KERN_SUCCESS) throw std::runtime_error(std::string("map direct memory backing: ") + mach_error_string(result));
 #else
         if (::mmap(reinterpret_cast<void*>(address), bytes, protection, MAP_SHARED | MAP_FIXED, file, static_cast<off_t>(fileOffset + offset)) == MAP_FAILED) throw std::system_error(errno, std::generic_category(), "map direct memory backing");
 #endif
@@ -390,6 +386,8 @@ private:
     std::size_t bytes;
 #ifdef _WIN32
     HANDLE section = nullptr;
+#elif defined(__APPLE__)
+    mach_port_t entry = MACH_PORT_NULL;
 #else
     int file = -1;
     void* hostWriteView = nullptr;
@@ -1181,12 +1179,13 @@ int DoMprotect(const void* addr, size_t len, int prot) {
         if (!image.guestModule) throw std::invalid_argument("Memory protection of a foreign image is not supported");
         mutation.RegisterImage(reinterpret_cast<const void*>(image.base));
     }
+    mutation.TrimToRegistered(pointer, bytes);
 #endif
     mutation.TrimToRegistered(pointer, bytes);
 #endif
     std::vector<std::pair<const void*, std::size_t>> spans;
     mutation.ForRegistered(pointer, bytes, [&](const void* span, std::size_t spanBytes) { spans.emplace_back(span, spanBytes); });
-    if (spans.empty() || reinterpret_cast<std::uintptr_t>(spans.front().first) != first) return SCE_KERNEL_ERROR_EINVAL;
+    if (spans.empty() || spans.front().first != pointer) return SCE_KERNEL_ERROR_EINVAL;
     for (const auto& [span, spanBytes] : spans) mutation.RequireUnpinned(span, spanBytes);
     for (const auto& [span, spanBytes] : spans) {
         mutation.Protect(span, spanBytes, (prot & 3) != 0, (prot & 2) != 0, (prot & GuestProtGpuReadWrite) != 0, [&] {

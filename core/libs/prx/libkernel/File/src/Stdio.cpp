@@ -1015,9 +1015,6 @@ int APS5_VABI sceKernelGetdents(int fd, char* buf, int nbytes) {
 
 #elif defined(__APPLE__)
 
-// APFS leaves d_seekoff at 0, so a batch that does not fit cannot be resumed from getdirentries
-// cookies. The descriptor's offset holds the index of the next entry instead, and each call lists
-// the directory through a separate descriptor; seeking the guest descriptor to 0 rewinds it.
 int APS5_VABI sceKernelGetdirentries(int fd, char* buf, int nbytes, int64_t* basep) {
     if (GuestSockets::IsOpen(fd)) return SceErrorFromErrno(GUEST_EINVAL);
     File::RefuseArchivedFile(fd, "getdirentries");
