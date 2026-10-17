@@ -1,7 +1,8 @@
 """A PS5-style ELF with PT_GNU_EH_FRAME and one CIE that asks for its own unwind information and exits with eh_frame_size.
 
 fixture() asks sceKernelGetModuleInfoForUnwind; module_info_fixture() asks sceKernelGetModuleInfoFromAddr with
-flags 2 and a stale st_size, as a title's own unwinder does; that size counts the terminator."""
+flags 2 and a stale st_size, as a title's own unwinder does. Both sizes count the terminator, as measured on the
+console (firmware 13.60) for the tables sceKernelGetModuleInfoForUnwind takes from sceKernelGetModuleInfoFromAddr."""
 import struct, sys
 sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.abspath(__file__)))
 from nid import nid
