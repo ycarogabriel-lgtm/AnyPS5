@@ -22,8 +22,8 @@ struct Archive {
 };
 
 Archive& State() {
-    static Archive archive;
-    return archive;
+    static auto* archive = new Archive;
+    return *archive;
 }
 
 bool SameComponent(std::string_view left, std::string_view right) {
@@ -75,8 +75,8 @@ struct OpenFile {
     std::mutex mutex;
 };
 
-std::mutex g_descriptorMutex;
-std::map<int, std::shared_ptr<OpenFile>> g_descriptors;
+std::mutex& g_descriptorMutex = *new std::mutex;
+auto& g_descriptors = *new std::map<int, std::shared_ptr<OpenFile>>;
 
 std::shared_ptr<OpenFile> Attached(int descriptor) {
     std::lock_guard lock(g_descriptorMutex);
