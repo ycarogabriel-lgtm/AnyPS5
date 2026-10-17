@@ -209,7 +209,6 @@ int APS5_VABI sceSysmoduleIsLoaded(std::uint16_t id) {
     }
     if (!findModuleName(id)) {
         APS5_LOG_OUT("unknown id: %u", static_cast<unsigned>(id));
-        // throw std::runtime_error(std::string("sceSysmoduleIsLoaded: unknown id ") + std::to_string(id));
         return 0;
     }
     std::lock_guard<std::mutex> lock(gMutex);
@@ -226,7 +225,6 @@ int APS5_VABI sceSysmoduleLoadModule(std::uint16_t id) {
     }
     if (!findModuleName(id)) {
         APS5_LOG_OUT("unknown id: %u", static_cast<unsigned>(id));
-        // throw std::runtime_error(std::string("sceSysmoduleLoadModule: unknown id ") + std::to_string(id));
         return 0;
     }
     std::lock_guard<std::mutex> lock(gMutex);
