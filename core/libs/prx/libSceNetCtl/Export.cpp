@@ -15,6 +15,10 @@
 #ifdef __linux__
 #include <netpacket/packet.h>
 #endif
+#ifdef __APPLE__
+#include <net/if_dl.h>
+#include <sys/sysctl.h>
+#endif
 #endif
 #include <cstdint>
 #include <cstddef>
@@ -161,6 +165,44 @@ struct HostDefaultRoute {
     unsigned long metric = 0;
 };
 
+#ifdef __APPLE__
+static std::vector<HostDefaultRoute> HostDefaultRoutes() {
+    int request[] = {CTL_NET, PF_ROUTE, 0, AF_INET, NET_RT_DUMP, 0};
+    std::size_t size = 0;
+    if (sysctl(request, 6, nullptr, &size, nullptr, 0) != 0) throw std::runtime_error("sceNetCtlGetInfo: the host routing table is unavailable");
+    std::vector<char> table(size);
+    if (sysctl(request, 6, table.data(), &size, nullptr, 0) != 0) throw std::runtime_error("sceNetCtlGetInfo: the host routing table is unavailable");
+    const auto alignedLength = [](std::size_t length) { return length == 0 ? sizeof(std::uint32_t) : (length + sizeof(std::uint32_t) - 1) & ~(sizeof(std::uint32_t) - 1); };
+    std::vector<HostDefaultRoute> routes;
+    for (std::size_t offset = 0; offset + sizeof(rt_msghdr) <= size;) {
+        const auto* message = reinterpret_cast<const rt_msghdr*>(table.data() + offset);
+        if (message->rtm_msglen == 0) break;
+        offset += message->rtm_msglen;
+        if (!(message->rtm_flags & RTF_UP) || (message->rtm_flags & RTF_REJECT) || !(message->rtm_flags & RTF_GATEWAY)) continue;
+        const sockaddr* addresses[RTAX_MAX]{};
+        const char* cursor = reinterpret_cast<const char*>(message + 1);
+        for (int index = 0; index < RTAX_MAX; ++index) {
+            if (!(message->rtm_addrs & (1 << index))) continue;
+            addresses[index] = reinterpret_cast<const sockaddr*>(cursor);
+            cursor += alignedLength(addresses[index]->sa_len);
+        }
+        const auto* destination = addresses[RTAX_DST];
+        const auto* gateway = addresses[RTAX_GATEWAY];
+        if (!destination || destination->sa_family != AF_INET || reinterpret_cast<const sockaddr_in*>(destination)->sin_addr.s_addr != 0) continue;
+        const auto* mask = addresses[RTAX_NETMASK];
+        if (mask && mask->sa_len > offsetof(sockaddr_in, sin_addr) && reinterpret_cast<const sockaddr_in*>(mask)->sin_addr.s_addr != 0) continue;
+        if (!gateway || gateway->sa_family != AF_INET) continue;
+        char name[IF_NAMESIZE]{};
+        if (!if_indextoname(message->rtm_index, name)) continue;
+        HostDefaultRoute route;
+        route.name = name;
+        route.gateway = reinterpret_cast<const sockaddr_in*>(gateway)->sin_addr;
+        route.metric = routes.size();
+        routes.push_back(route);
+    }
+    return routes;
+}
+#else
 static std::vector<HostDefaultRoute> HostDefaultRoutes() {
     std::ifstream table("/proc/net/route");
     if (!table) throw std::runtime_error("sceNetCtlGetInfo: the host routing table is unavailable");
@@ -183,6 +225,7 @@ static std::vector<HostDefaultRoute> HostDefaultRoutes() {
     }
     return routes;
 }
+#endif
 
 static std::uint32_t HostInterfaceMtu(const char* name) {
     const int descriptor = socket(AF_INET, SOCK_DGRAM, 0);
@@ -311,6 +354,17 @@ static void HostTraffic(std::uint64_t& sent, std::uint64_t& received) {
         const std::string statistics = std::string("/sys/class/net/") + item->ifa_name + "/statistics/";
         sent += NetCtlReadByteCounter_nid_no_patch((statistics + "tx_bytes").c_str());
         received += NetCtlReadByteCounter_nid_no_patch((statistics + "rx_bytes").c_str());
+    }
+    freeifaddrs(interfaces);
+#elif defined(__APPLE__)
+    ifaddrs* interfaces = nullptr;
+    if (getifaddrs(&interfaces) != 0) throw std::runtime_error("sceNetCtlGetIfStat: the host interface list is unavailable");
+    for (auto* item = interfaces; item; item = item->ifa_next) {
+        if (!item->ifa_addr || item->ifa_addr->sa_family != AF_LINK || !item->ifa_data) continue;
+        if (!(item->ifa_flags & IFF_UP) || (item->ifa_flags & IFF_LOOPBACK)) continue;
+        const auto* counters = static_cast<const if_data*>(item->ifa_data);
+        sent += counters->ifi_obytes;
+        received += counters->ifi_ibytes;
     }
     freeifaddrs(interfaces);
 #else
