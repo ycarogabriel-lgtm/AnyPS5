@@ -177,7 +177,7 @@ export class Archive {
   }
 
   selectedBytesForTarget(target) {
-    if (target !== "linux" && target !== "windows") throw new Error(`Unsupported conversion target: ${target}`);
+    if (target !== "linux" && target !== "windows" && target !== "macos") throw new Error(`Unsupported conversion target: ${target}`);
     if (target === "windows" && (this.icon?.entry.uncompressedSize ?? 0) > ICON_LIMIT) throw new Error("sce_sys/icon0.png exceeds 16 MiB");
     return target === "windows" ? this.windowsSelectedBytes : this.selectedBytes;
   }
@@ -194,7 +194,7 @@ export class Archive {
     };
     const name = this.executable.name;
     const stem = name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
-    const outputName = (stem || "app") + (target === "windows" ? ".exe" : ".elf");
+    const outputName = (stem || "app") + (target === "windows" ? ".exe" : target === "macos" ? "" : ".elf");
     const input = { name, outputName, target, toIntel, executable: await read(this.executable), modules: [], icon: null };
     for (const item of this.modules) input.modules.push({ name: item.name, bytes: await read(item) });
     if (this.icon && target === "windows") input.icon = await read(this.icon);
@@ -283,7 +283,7 @@ class DirectoryWriter {
 }
 
 export async function packageArchive(archive, converted, outputName, libraryFile, destination, report, directory = false) {
-  const libraries = new ZipReader(new BoundedBlobReader(libraryFile));
+  const libraries = libraryFile ? new ZipReader(new BoundedBlobReader(libraryFile)) : null;
   const writer = directory ? new DirectoryWriter(destination) : new ZipWriter(destination, { level: 9, zip64: true, bufferedWrite: false, useWebWorkers: false, useCompressionStream: false, preventClose: true });
   const names = new Set();
   const claim = name => {
@@ -293,8 +293,8 @@ export async function packageArchive(archive, converted, outputName, libraryFile
     names.add(key);
   };
   try {
-    const libraryEntries = await libraries.getEntries();
-    if (!libraryEntries.length || libraryEntries.length > 4096) throw new Error("Invalid library archive");
+    const libraryEntries = libraries ? await libraries.getEntries() : [];
+    if (libraries && (!libraryEntries.length || libraryEntries.length > 4096)) throw new Error("Invalid library archive");
     for (const entry of libraryEntries) {
       if (!entry.filename.startsWith("libs/") || entry.encrypted || ((entry.externalFileAttributes >>> 16) & 0xf000) === 0xa000) throw new Error("Invalid library archive layout");
       claim(entry.filename);
@@ -322,6 +322,6 @@ export async function packageArchive(archive, converted, outputName, libraryFile
     }
     await writer.close();
   } finally {
-    await libraries.close();
+    await libraries?.close();
   }
 }

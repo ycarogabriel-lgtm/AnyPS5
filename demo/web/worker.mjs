@@ -21,7 +21,8 @@ export async function downloadLibraries(target) {
   if (!response.ok) throw new Error(`Cannot load release manifest (${response.status})`);
   const release = await response.json();
   const asset = release.platforms[target];
-  if (!asset || !/^libraries\/(windows|linux)-[a-f0-9]+\.zip$/u.test(asset.path) || !/^[a-f0-9]{64}$/u.test(asset.sha256)) throw new Error("Invalid release manifest");
+  if (!asset && target === "macos") return { file: null, release, expandedBytes: 0 };
+  if (!asset || !/^libraries\/(windows|linux|macos)-[a-f0-9]+\.zip$/u.test(asset.path) || !/^[a-f0-9]{64}$/u.test(asset.sha256)) throw new Error("Invalid release manifest");
   const latestResponse = await fetch("https://api.github.com/repos/boykopovar/AnyPS5/releases/latest", { headers: { Accept: "application/vnd.github+json" } });
   if (!latestResponse.ok) {
     const rateLimited = latestResponse.status === 429 || (latestResponse.status === 403 && latestResponse.headers.get("x-ratelimit-remaining") === "0");
@@ -110,7 +111,7 @@ self.onmessage = async ({ data }) => {
         await packageArchive(archive, converted, outputName, libraries.file, destination, report);
         await destination.close();
       } else throw new Error("Unknown save mode");
-      self.postMessage({ type: "complete", mode: data.mode, blob: data.mode === "memory" ? new Blob(chunks, { type: "application/zip" }) : null, outputName, size, release: libraries.release.tag });
+      self.postMessage({ type: "complete", mode: data.mode, blob: data.mode === "memory" ? new Blob(chunks, { type: "application/zip" }) : null, outputName, size, release: libraries.release.tag, libraries: Boolean(libraries.file) });
       await archive.close();
       archive = null;
     } else throw new Error("Unknown worker request");

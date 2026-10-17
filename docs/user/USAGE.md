@@ -2,6 +2,8 @@
 
 [**Online relinker**](https://boykopovar.github.io/AnyPS5/) - files stay on your device.
 
+The online relinker converts for Windows, Linux and macOS on Apple Silicon. The macOS target is `--macos --to-rosetta`; until a release publishes macOS system libraries, its archive has no `libs/` directory, so build the `libs` target on macOS and copy the libraries there.
+
 ### Browser folder output
 
 The online converter can save Linux output as an uncompressed folder in supported browsers. It does not overwrite an existing destination folder. If conversion fails or is cancelled, it aborts the active file and attempts to remove the newly created output folder. If the browser prevents cleanup, the error names the folder that may contain incomplete files.
