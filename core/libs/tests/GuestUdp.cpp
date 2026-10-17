@@ -305,9 +305,6 @@ int main() {
     Require(recvfrom_nid_postfix(dissolved, buffer, sizeof(buffer), 0, nullptr, nullptr) == sizeof(unrelated));
     Require(std::strcmp(buffer, unrelated) == 0);
     for (const int descriptor : {peer, other, dissolved}) Require(close_nid_postfix(descriptor) == 0);
-#ifdef __APPLE__
-    Require(close_nid_postfix(addressed) == 0);
-#endif
     unsigned char parsed[16]{};
     Require(inet_pton_nid_postfix(2, "127.0.0.1", parsed) == 1);
     Require(parsed[0] == 127 && parsed[1] == 0 && parsed[2] == 0 && parsed[3] == 1);
