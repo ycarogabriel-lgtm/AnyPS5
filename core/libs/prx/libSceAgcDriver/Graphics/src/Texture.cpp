@@ -1188,21 +1188,23 @@ VkFormat StorageFormatOrUndefined(const Context& context, VkFormat format) {
         context.formatProperties(context.physical, candidate, &properties);
         return (properties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0;
     };
-    VkFormat storage = VK_FORMAT_UNDEFINED;
-    if (supports(format)) {
-        storage = format;
-    } else {
-        VkFormat linear = VK_FORMAT_UNDEFINED;
-        switch (format) {
-            case VK_FORMAT_R8G8B8A8_SRGB: linear = VK_FORMAT_R8G8B8A8_UNORM; break;
-            case VK_FORMAT_B8G8R8A8_SRGB: linear = VK_FORMAT_B8G8R8A8_UNORM; break;
-            case VK_FORMAT_A8B8G8R8_SRGB_PACK32: linear = VK_FORMAT_A8B8G8R8_UNORM_PACK32; break;
-            case VK_FORMAT_R8_SRGB: linear = VK_FORMAT_R8_UNORM; break;
-            case VK_FORMAT_R8G8_SRGB: linear = VK_FORMAT_R8G8_UNORM; break;
-            default: break;
-        }
-        if (linear != VK_FORMAT_UNDEFINED && supports(linear)) storage = linear;
+    VkFormat linear = VK_FORMAT_UNDEFINED;
+    switch (format) {
+        case VK_FORMAT_R8G8B8A8_SRGB: linear = VK_FORMAT_R8G8B8A8_UNORM; break;
+        case VK_FORMAT_B8G8R8A8_SRGB: linear = VK_FORMAT_B8G8R8A8_UNORM; break;
+        case VK_FORMAT_A8B8G8R8_SRGB_PACK32: linear = VK_FORMAT_A8B8G8R8_UNORM_PACK32; break;
+        case VK_FORMAT_R8_SRGB: linear = VK_FORMAT_R8_UNORM; break;
+        case VK_FORMAT_R8G8_SRGB: linear = VK_FORMAT_R8G8_UNORM; break;
+        default: break;
     }
+    VkFormat storage = VK_FORMAT_UNDEFINED;
+#ifdef __APPLE__
+    if (linear != VK_FORMAT_UNDEFINED && supports(linear)) storage = linear;
+    else if (supports(format)) storage = format;
+#else
+    if (supports(format)) storage = format;
+    else if (linear != VK_FORMAT_UNDEFINED && supports(linear)) storage = linear;
+#endif
     std::lock_guard lock(table.mutex);
     table.formats.emplace(key, storage);
     return storage;
