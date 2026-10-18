@@ -113,6 +113,7 @@ enum class ConservativeZExport : std::uint8_t {
 enum class ColorExportPacking : std::uint8_t {
     None,
     Unorm10_11_11,
+    Float11_11_10,
     RawUint,
     RawSint
 };
@@ -397,7 +398,8 @@ enum class DescriptorRole {
     ShaderData,
     ImageTable,
     SamplerTable,
-    ImageTableMap
+    ImageTableMap,
+    ImageStorageTable
 };
 
 struct DescriptorBinding {
@@ -686,6 +688,7 @@ void SetDebugProbeActive(bool active);
 struct RectListShaders {
     RecompileResult control;
     RecompileResult evaluation;
+    RecompileResult lastVertexControl;
 };
 
 [[nodiscard]] RectListShaders BuildRectListShaders(const RecompileResult& vertex, const RecompileResult& fragment, const SpirvTarget& target);

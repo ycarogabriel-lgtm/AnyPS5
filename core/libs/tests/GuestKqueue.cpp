@@ -68,6 +68,7 @@ static constexpr std::uint32_t NoteLowat = 0x0001;
 static constexpr std::uint32_t NoteFfcopy = 0xc0000000;
 static constexpr std::uint32_t NoteFfor = 0x80000000;
 static constexpr std::uint32_t NoteUseconds = 0x0004;
+static constexpr std::uint32_t NoteNseconds = 0x0008;
 static constexpr std::uint32_t NoteDelete = 0x0001;
 static constexpr std::uint32_t NoteWrite = 0x0002;
 static constexpr std::uint32_t NoteExtend = 0x0004;
@@ -168,6 +169,12 @@ static void Timers() {
     Require(Poll(kq, events, 4) == 0);
     RequireFailure(Apply(kq, Change(2, EvfiltTimer, EvDelete)), GuestEnoent);
 
+    Require(Apply(kq, Change(5, EvfiltTimer, EvAdd | EvOneshot, NoteNseconds, 1500000001)) == 0);
+    const KernelTimespec twoSeconds{2, 0};
+    Require(kevent_nid_postfix(kq, nullptr, 0, events, 4, &twoSeconds) == 1);
+    Require(events[0].ident == 5 && events[0].data == 1);
+    Require(Poll(kq, events, 4) == 0);
+
     RequireFailure(Apply(kq, Change(3, EvfiltTimer, EvAdd, 0, -1)), GuestEinval);
     RequireFailure(Apply(kq, Change(3, EvfiltTimer, EvAdd, 0x10, 5)), GuestEinval);
     RequireFailure(Apply(kq, Change(3, EvfiltTimer, EvAdd, NoteUseconds | 0x1, 5)), GuestEinval);
@@ -265,6 +272,24 @@ static void SocketPair() {
     Require(Wait(kq, events, 4) == 1 && events[0].filter == EvfiltWrite);
     RequireFailure(Apply(kq, Change(static_cast<std::uintptr_t>(pair[1]), EvfiltWrite, EvDelete)), GuestEnoent);
     Require(Throws([kq, &pair] { Apply(kq, Change(static_cast<std::uintptr_t>(pair[1]), EvfiltRead, EvAdd | EvClear)); }));
+    const int space = kqueue_nid_postfix();
+    Require(Apply(space, Change(static_cast<std::uintptr_t>(pair[1]), EvfiltWrite, EvAdd)) == 0);
+    Require(Poll(space, events, 4) == 1 && events[0].filter == EvfiltWrite);
+    const std::intptr_t idle = events[0].data;
+    Require(idle > 0);
+    const std::string payload(1000, 'p');
+    Require(send_nid_postfix(pair[1], payload.data(), payload.size(), 0) == static_cast<std::int64_t>(payload.size()));
+    Require(Poll(space, events, 4) == 1 && events[0].filter == EvfiltWrite);
+#if defined(__linux__)
+    Require(events[0].data <= idle - static_cast<std::intptr_t>(payload.size()));
+#else
+    Require(events[0].data > 0 && events[0].data <= idle);
+#endif
+    std::string drained(payload.size(), '\0');
+    Require(recv_nid_postfix(pair[0], drained.data(), drained.size(), 0) == static_cast<std::int64_t>(drained.size()));
+    Require(Poll(space, events, 4) == 1 && events[0].filter == EvfiltWrite && events[0].data == idle);
+    Require(Apply(space, Change(static_cast<std::uintptr_t>(pair[1]), EvfiltWrite, EvDelete)) == 0);
+    Require(close_nid_postfix(space) == 0);
     Require(close_nid_postfix(pair[0]) == 0);
     RequireFailure(Apply(kq, Change(static_cast<std::uintptr_t>(pair[0]), EvfiltRead, EvDelete)), GuestEbadf);
     Require(close_nid_postfix(pair[1]) == 0);
