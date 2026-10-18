@@ -20,13 +20,13 @@ directories=("$@")
 input="$game/.relink-input"
 mkdir -p "$input"
 
-python3 -I "$tools/unself.py" "$dump/eboot.bin" "$input/eboot.elf"
+python3 -I "$repo/tools/unwrap_self.py" "$dump/eboot.bin" "$input/eboot.elf"
 for directory in sce_module "${directories[@]+"${directories[@]}"}"; do
     [ -d "$dump/$directory" ] || continue
     mkdir -p "$input/$directory"
     for module in "$dump/$directory"/*.prx "$dump/$directory"/*.sprx; do
         [ -f "$module" ] || continue
-        python3 -I "$tools/unself.py" "$module" "$input/$directory/$(basename "$module")"
+        python3 -I "$repo/tools/unwrap_self.py" "$module" "$input/$directory/$(basename "$module")"
     done
 done
 
