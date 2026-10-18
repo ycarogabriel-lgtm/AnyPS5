@@ -310,6 +310,14 @@ double APS5_VABI acos_nid_postfix(double x) { return std::acos(x); }
 double APS5_VABI sqrt_nid_postfix(double x) { return std::sqrt(x); }
 float APS5_VABI sqrtf_nid_postfix(float x) { return std::sqrt(x); }
 double APS5_VABI fabs_nid_postfix(double x) { return std::fabs(x); }
+float APS5_VABI fabsf_nid_postfix(float x) { return std::fabs(x); }
+long double APS5_VABI fabsl_nid_postfix(long double x) { return std::fabs(x); }
+double APS5_VABI copysign_nid_postfix(double x, double y) {
+    return std::copysign(x, y);
+}
+float APS5_VABI copysignf_nid_postfix(float x, float y) {
+    return std::copysign(x, y);
+}
 int APS5_VABI abs_nid_postfix(int x) { return x < 0 ? static_cast<int>(0u - static_cast<unsigned>(x)) : x; }
 double APS5_VABI trunc_nid_postfix(double x) { return std::trunc(x); }
 double APS5_VABI ceil_nid_postfix(double x) { return std::ceil(x); }
@@ -566,6 +574,8 @@ int APS5_VABI ilogb_nid_postfix(double x) {
 }
 int APS5_VABI ilogbf_nid_postfix(float x) { return ilogb_nid_postfix(static_cast<double>(x)); }
 double APS5_VABI remainder_nid_postfix(double x, double y) { return std::remainder(x, y); }
+double APS5_VABI remquo_nid_postfix(double x, double y, int* quo) { return std::remquo(x, y, quo); }
+float APS5_VABI remquof_nid_postfix(float x, float y, int* quo) { return std::remquo(x, y, quo); }
 float APS5_VABI _FSinh_nid_postfix(float x, float y) { return y * std::sinh(x); }
 float APS5_VABI _FCosh_nid_postfix(float x, float y) { return y * std::cosh(x); }
 
