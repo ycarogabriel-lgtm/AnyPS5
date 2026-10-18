@@ -15,6 +15,7 @@
 #include "prx/libSceAgcDriver/Execution/include/DeviceFault.hpp"
 #include "prx/libSceAgcDriver/Execution/include/FragmentBarycentric.hpp"
 #include "prx/libSceAgcDriver/Execution/include/PipelineLinkOptimization.hpp"
+#include "prx/libSceAgcDriver/Execution/include/RobustBufferAccess.hpp"
 #include "prx/libSceAgcDriver/Execution/include/SubgroupClock.hpp"
 #include "prx/libSceAgcDriver/Execution/include/ShaderDeviceProfile.hpp"
 #include "prx/libSceAgcDriver/Execution/include/PresentMode.hpp"
@@ -304,6 +305,7 @@ struct VulkanDevice::State {
     bool float16DenormPreserve = false;
     bool demoteToHelperInvocation = false;
     bool earlyFragmentSampleMaskTestBeforeSampleCounting = false;
+    bool robustBufferAccess2 = false;
     // VK_EXT_descriptor_indexing with non-uniform image array indexing (bindless image tables in
     // graphics stages, and compute workgroups wider than a wave).
     bool descriptorIndexing = false;
@@ -1856,9 +1858,19 @@ VulkanDevice::VulkanDevice(const PresentationWindow* window, bool compileOnly) :
         VkPhysicalDeviceFeatures2 queried{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &robustness2};
         state->InstanceFunction<PFN_vkGetPhysicalDeviceFeatures2>("vkGetPhysicalDeviceFeatures2")(selected, &queried);
     }
-    if (robustness2.nullDescriptor == VK_TRUE) {
+    VkDriverId robustnessDriver = VK_DRIVER_ID_MAX_ENUM;
+    if (hasExtension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME)) {
+        VkPhysicalDeviceDriverProperties driver{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+        VkPhysicalDeviceProperties2 driverProperties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &driver};
+        state->InstanceFunction<PFN_vkGetPhysicalDeviceProperties2>("vkGetPhysicalDeviceProperties2")(selected, &driverProperties);
+        robustnessDriver = driver.driverID;
+    }
+    state->robustBufferAccess2 = robustness2.robustBufferAccess2 == VK_TRUE && enabled.robustBufferAccess == VK_TRUE && RobustBufferAccess2Usable(robustnessDriver);
+    if (robustness2.nullDescriptor == VK_TRUE || state->robustBufferAccess2) {
+        const bool nullDescriptor = robustness2.nullDescriptor == VK_TRUE;
         robustness2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
-        robustness2.nullDescriptor = VK_TRUE;
+        robustness2.nullDescriptor = nullDescriptor ? VK_TRUE : VK_FALSE;
+        robustness2.robustBufferAccess2 = state->robustBufferAccess2 ? VK_TRUE : VK_FALSE;
         robustness2.pNext = bdaFeatures.pNext;
         bdaFeatures.pNext = &robustness2;
         deviceExtensions.push_back(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);
@@ -2209,7 +2221,7 @@ int VulkanDevice::WriteLabelOnGpu(std::uint64_t address, std::span<const std::by
     // pair for a whole group of labels recorded back to back (Recorder::RecordStore orders the
     // stores of a run against each other and against the work before and after, the queued DCC
     // key stores included).
-    const auto recordStore = [&] { recorder.RecordStore(import->buffer, address - import->base, bytes, address); };
+    const auto recordStore = [&] { recorder.RecordStore(import->buffer, Graphics::HostImportOffset(*import, address), bytes, address); };
     // Only a write-back that can land over these bytes (a listed copied writer of the range, as
     // FillBuffer tests) puts the label behind the completions; any other pending completion
     // stores elsewhere. Debug aid: APS5_LABEL_GATE_ALL=1 gates on any completion, as before (a
@@ -2410,7 +2422,7 @@ bool VulkanDevice::FillBuffer(std::uint64_t address, std::size_t bytes, std::spa
         Graphics::RecordMemoryBarrier(context, commands, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
         Graphics::Recorder::CountBarriers(CommandClass::Fill);
     }
-    const auto offset = address - import->base;
+    const auto offset = Graphics::HostImportOffset(*import, address);
     if (uniform) {
         ++uniformFills;
         context.Resolved(&Graphics::DeviceFunctions::cmdFillBuffer, "vkCmdFillBuffer")(commands, import->buffer, offset, bytes, pattern[0]);
@@ -2677,7 +2689,7 @@ VulkanDevice::CopyOutcome VulkanDevice::CopyBuffer(std::uint64_t destination, st
         Graphics::Recorder::CountBarriers(CommandClass::Copy);
     }
     const auto gpuTiming = recorder.BeginGpuTiming(programAddress);
-    const VkBufferCopy region{source - sourceImport->base, destination - destinationImport->base, bytes};
+    const VkBufferCopy region{Graphics::HostImportOffset(*sourceImport, source), Graphics::HostImportOffset(*destinationImport, destination), bytes};
     context.Resolved(&Graphics::DeviceFunctions::cmdCopyBuffer, "vkCmdCopyBuffer")(commands, sourceImport->buffer, destinationImport->buffer, 1, &region);
     recorder.EndGpuTiming(gpuTiming, bytes);
     // The copied bytes are visible to everything recorded after and to the host, as after a fill.
@@ -3515,6 +3527,7 @@ ShaderRecompiler::SpirvTarget VulkanDevice::buildTarget() const {
     target.spannedWaves = state->spannedWaves;
     target.fixedPushSlots = state->graphicsPipelineLibrary;
     target.registrationModules = state->graphicsPipelineLibrary;
+    target.robustBufferAccess2 = state->robustBufferAccess2;
     target.srgbDecodeFormats = state->srgbDecodeFormats;
     target.vertexSubgroups = (state->subgroup.supportedStages & VK_SHADER_STAGE_VERTEX_BIT) != 0;
     if (state->meshShader) {
@@ -3529,6 +3542,10 @@ std::optional<ShaderRecompiler::GeometryStageLimits> VulkanDevice::GeometryLimit
     if (!state->geometryShader) return std::nullopt;
     const auto& limits = state->properties.limits;
     return ShaderRecompiler::GeometryStageLimits{limits.maxGeometryInputComponents, limits.maxGeometryOutputComponents, limits.maxGeometryOutputVertices, limits.maxGeometryTotalOutputComponents, limits.maxFragmentInputComponents};
+}
+
+std::uint32_t VulkanDevice::MaxFragmentInputComponents() const {
+    return state->properties.limits.maxFragmentInputComponents;
 }
 
 bool VulkanDevice::PrimitiveListRestart() const {
@@ -4631,7 +4648,7 @@ void VulkanDevice::recordDispatch(RecordedDispatch& record) {
     const auto gpuTiming = recorder.BeginGpuTiming(record.programAddress != 0 ? record.programAddress : record.shader->program->variantId);
     if (state->checkpointMarker != nullptr) state->checkpointMarker(commands, reinterpret_cast<const void*>(static_cast<std::uintptr_t>(record.programAddress)));
     if (argumentImport != nullptr) {
-        context.Resolved(&Graphics::DeviceFunctions::cmdDispatchIndirect, "vkCmdDispatchIndirect")(commands, argumentImport->buffer, arguments - argumentImport->base);
+        context.Resolved(&Graphics::DeviceFunctions::cmdDispatchIndirect, "vkCmdDispatchIndirect")(commands, argumentImport->buffer, Graphics::HostImportOffset(*argumentImport, arguments));
     } else {
         const auto* limit = state->properties.limits.maxComputeWorkGroupCount;
         if (record.x <= limit[0] && record.y <= limit[1] && record.z <= limit[2]) {
