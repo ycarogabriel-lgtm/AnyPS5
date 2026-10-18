@@ -11,7 +11,7 @@
 #include <new>
 #include <stdexcept>
 #include <system_error>
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -49,7 +49,7 @@ constexpr std::uintptr_t GuestUserAddressEnd = 0x800000000000;
 constexpr int GuestAlignedSuper = 0x1000000;
 constexpr std::size_t SuperpageSize = std::size_t{1} << 21;
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 class ScopedDescriptor {
 public:
     explicit ScopedDescriptor(int value) noexcept : descriptor(fcntl(value, F_DUPFD_CLOEXEC, 0)), error(descriptor < 0 ? errno : 0) {}
@@ -81,9 +81,23 @@ bool RoundLength(std::size_t length, std::size_t& rounded) {
     return true;
 }
 
+thread_local int pendingGuestError = 0;
+
 void SetError(int error) {
     *__error_nid_postfix() = error;
+    pendingGuestError = error;
 }
+
+class GuestErrorScope {
+public:
+    GuestErrorScope() noexcept { pendingGuestError = 0; }
+    ~GuestErrorScope() {
+        if (pendingGuestError != 0) *__error_nid_postfix() = pendingGuestError;
+        pendingGuestError = 0;
+    }
+    GuestErrorScope(const GuestErrorScope&) = delete;
+    GuestErrorScope& operator=(const GuestErrorScope&) = delete;
+};
 
 bool Mapped(std::uintptr_t address) {
     VirtualQueryInfo info{};
@@ -95,6 +109,7 @@ extern "C" {
 
 void* APS5_VABI mmap_nid_postfix(void* address, std::size_t length, int protection,
                                 int flags, int descriptor, std::int64_t offset) noexcept {
+    const GuestErrorScope errorScope;
     const auto failed = [](int error) -> void* {
         SetError(error);
         return reinterpret_cast<void*>(static_cast<std::uintptr_t>(-1));
@@ -141,7 +156,7 @@ void* APS5_VABI mmap_nid_postfix(void* address, std::size_t length, int protecti
         rounded > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()) ||
         static_cast<std::uint64_t>(offset) > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) - rounded)
         return failed(GuestInvalid);
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
     const ScopedDescriptor pinnedDescriptor(descriptor);
     if (pinnedDescriptor.Get() < 0) return failed(pinnedDescriptor.Error());
     const int mappingDescriptor = pinnedDescriptor.Get();
@@ -179,6 +194,7 @@ void* APS5_VABI mmap_nid_postfix(void* address, std::size_t length, int protecti
 }
 
 int APS5_VABI munmap_nid_postfix(void* address, std::size_t length) noexcept {
+    const GuestErrorScope errorScope;
     const auto failed = [](int error) {
         SetError(error);
         return -1;
@@ -201,6 +217,7 @@ int APS5_VABI munmap_nid_postfix(void* address, std::size_t length) noexcept {
 }
 
 int APS5_VABI mprotect_nid_postfix(void* address, std::size_t length, int protection) noexcept {
+    const GuestErrorScope errorScope;
     const auto failed = [](int error) {
         SetError(error);
         return -1;
@@ -253,6 +270,7 @@ int APS5_VABI munlockall_nid_postfix() {
 }
 
 int APS5_VABI msync_nid_postfix(void* address, std::size_t length, int flags) {
+    const GuestErrorScope errorScope;
     const auto failed = [](int error) {
         SetError(error);
         return -1;
@@ -280,6 +298,7 @@ int APS5_VABI madvise_nid_postfix(void* address, std::size_t length, int advice)
 }
 
 int APS5_VABI mincore_nid_postfix(const void* address, std::size_t length, char* vec) {
+    const GuestErrorScope errorScope;
     const auto failed = [](int error) {
         SetError(error);
         return -1;
