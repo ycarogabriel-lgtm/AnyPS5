@@ -96,7 +96,7 @@ int main() {
         }
 #ifdef __APPLE__
         if (!AgcDriver::GuestMemory::Accessible(reinterpret_cast<const void*>(FsTable), 0x60u)) {
-            std::puts("skipped, the host holds 0xfe0040000 (Rosetta reserves 0xfc0000000-0x1000000000)");
+            std::puts("skipped, the macOS host holds 0xfe0040000 (0xfc0000000-0x1000000000)");
             return VulkanTestSkipped;
         }
 #endif
