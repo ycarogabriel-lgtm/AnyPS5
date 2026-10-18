@@ -1310,8 +1310,11 @@ int64_t APS5_VABI sceKernelPwrite(int d, const void* buf, size_t nbytes, int64_t
 }
 
 #ifdef __APPLE__
-static std::int64_t EmptyIovecs(int d) {
-    return ::fcntl(d, F_GETFD) < 0 ? SceErrorFromErrno(errno) : 0;
+static std::int64_t EmptyIovecs(int d, bool write = false) {
+    const int status = ::fcntl(d, F_GETFL);
+    if (status < 0) return SceErrorFromErrno(errno);
+    if (write && (status & O_ACCMODE) == O_RDONLY) return SceErrorFromErrno(GUEST_EBADF);
+    return 0;
 }
 #endif
 
@@ -1339,7 +1342,7 @@ int64_t APS5_VABI sceKernelWritev(int d, const KernelIovec* iov, int iovcnt) {
         return result < 0 ? SceKernelError(*__error_nid_postfix()) : result;
     }
 #ifdef __APPLE__
-    if (iovcnt == 0) return EmptyIovecs(d);
+    if (iovcnt == 0) return EmptyIovecs(d, true);
 #endif
     const auto sharedResult = File::WritevSharedMemory_nid_no_patch(d, NativeIovecs(iov), iovcnt);
     if (sharedResult != -2) return sharedResult < 0 ? SceErrorFromErrno(errno) : sharedResult;
@@ -1367,7 +1370,7 @@ int64_t APS5_VABI sceKernelPwritev(int d, const KernelIovec* iov, int iovcnt, in
     if (offset < 0) return SceErrorFromErrno(GUEST_EINVAL);
     if (const auto error = PositionedGuestSocketError(d); error != 0) return error;
 #ifdef __APPLE__
-    if (iovcnt == 0) return EmptyIovecs(d);
+    if (iovcnt == 0) return EmptyIovecs(d, true);
 #endif
     const auto sharedResult = File::PwritevSharedMemory_nid_no_patch(d, NativeIovecs(iov), iovcnt, offset);
     if (sharedResult != -2) return sharedResult < 0 ? SceErrorFromErrno(errno) : sharedResult;
