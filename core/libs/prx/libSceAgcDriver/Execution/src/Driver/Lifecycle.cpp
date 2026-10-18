@@ -41,6 +41,9 @@ void PrintFailure(std::exception_ptr error) {
         std::rethrow_exception(error);
     } catch (const std::exception& cause) {
         std::fprintf(stderr, "[gpu] driver failure: %s\n", cause.what());
+#if defined(__APPLE__)
+        PrintRecentWork();
+#endif
     } catch (...) {
         std::fprintf(stderr, "[gpu] driver failure with a non-standard exception\n");
     }
