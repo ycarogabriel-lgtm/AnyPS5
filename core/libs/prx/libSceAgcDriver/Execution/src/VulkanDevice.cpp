@@ -972,7 +972,20 @@ VulkanDevice::VulkanDevice(const PresentationWindow* window, bool compileOnly) :
 #ifdef _WIN32
     state->library = SDL_LoadObject("vulkan-1.dll");
 #elif defined(__APPLE__)
-    state->library = SDL_LoadObject("libvulkan.1.dylib");
+    std::string attempted;
+    if (const char* overridden = std::getenv("ANYPS5_VULKAN_LIBRARY"); overridden != nullptr && *overridden != '\0') {
+        state->library = SDL_LoadObject(overridden);
+        attempted = std::string(overridden) + ": " + SDL_GetError();
+    } else {
+        for (const char* candidate : {"libvulkan.1.dylib", "libvulkan.dylib", "vulkan.framework/vulkan", "libMoltenVK.dylib", "MoltenVK.framework/MoltenVK"}) {
+            state->library = SDL_LoadObject(candidate);
+            if (state->library != nullptr) break;
+            attempted += std::string(attempted.empty() ? "" : "; ") + candidate + ": " + SDL_GetError();
+        }
+    }
+    if (state->library == nullptr) {
+        throw std::runtime_error("Vulkan loader: no Vulkan library found (install the Vulkan SDK or set ANYPS5_VULKAN_LIBRARY): " + attempted);
+    }
 #else
     state->library = SDL_LoadObject("libvulkan.so.1");
 #endif
