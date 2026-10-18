@@ -43,6 +43,7 @@
 #include "Optimization/include/Optimization/SsaBuilder.hpp"
 #include "Optimization/include/Optimization/TessellationLowering.hpp"
 #include "SpirvBackend/include/SpirvBackend/SpirvEmitter.hpp"
+#include "SpirvBackend/include/SpirvBackend/SpirvLoopContinue.hpp"
 #if ANYPS5_ENABLE_SPIRV_TOOLS
 #include "SpirvBackend/SpirvOptimizer.hpp"
 #endif
@@ -597,6 +598,9 @@ CompiledVariant emitVariant(const RecompileRequest& request, IrProgram& program)
         }
     }
 
+#if defined(__APPLE__)
+    result.spirv = SeparateLoopContinueTargets(result.spirv);
+#endif
     const bool embedded = !result.vertexInputs.empty() && inputInfo.vertex != nullptr && inputInfo.vertex->fetchEmbedded;
     if (embedded) PrepareVertexInputSpecialization(result);
 #if ANYPS5_ENABLE_SPIRV_TOOLS
@@ -712,6 +716,9 @@ std::shared_ptr<const SpecializedModule> buildSpecializedModule(const CompiledSh
     materialized = std::move(compact);
 #if ANYPS5_ENABLE_SPIRV_TOOLS
     materialized = ValidateAndOptimizeSpirv(materialized, target.vulkanVersion, target.spirvVersion, target.nonConstantImageOffsets, false);
+#endif
+#if defined(__APPLE__)
+    materialized = SeparateLoopContinueTargets(materialized);
 #endif
     auto module = std::make_shared<SpecializedModule>();
     std::map<std::uint32_t, std::uint32_t> bindingNumbers;
