@@ -3,7 +3,7 @@
 extern "C" int puts(const char*);
 
 static thread_local int counter = 5;
-__attribute__((visibility("hidden"))) thread_local int initialExec __attribute__((tls_model("initial-exec"))) = 7;
+[[gnu::visibility("hidden"), gnu::tls_model("initial-exec")]] thread_local int initialExec = 7;
 static volatile int initialValue = 10;
 static int initialized = initialValue;
 

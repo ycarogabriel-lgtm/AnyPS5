@@ -272,6 +272,7 @@ struct SpirvTarget {
     bool float16DenormPreserve = false;
     bool spannedWaves = false;
     bool fragmentBarycentricBuiltins = false;
+    bool robustBufferAccess2 = false;
 };
 
 struct BindingLayout {
@@ -702,6 +703,13 @@ struct GeometryStageLimits {
 };
 
 [[nodiscard]] RecompileResult BuildBarycentricGeometryShader(const RecompileResult& vertex, const RecompileResult& fragment, const SpirvTarget& target, const std::optional<GeometryStageLimits>& limits);
+
+struct BarycentricTessellationShaders {
+    RecompileResult control;
+    RecompileResult evaluation;
+};
+
+[[nodiscard]] BarycentricTessellationShaders BuildBarycentricTessellationShaders(const RecompileResult& vertex, const RecompileResult& fragment, const SpirvTarget& target, std::uint32_t maxFragmentInputComponents);
 
 }
 

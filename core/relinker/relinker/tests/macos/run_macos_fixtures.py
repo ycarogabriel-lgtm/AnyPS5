@@ -58,7 +58,7 @@ def compiled_exception(directory):
 
 def compiled_c_cleanup(directory):
     tools = guesttools
-    objects = {"cleanup": ("c_cleanup.c", ["-x", "c"]), "main": ("c_cleanup_main.cpp", [])}
+    objects = {"cleanup": ("c_cleanup.c", ["-x", "c", "-std=c2x"]), "main": ("c_cleanup_main.cpp", [])}
     for name, (source, extra) in objects.items():
         tools.compile(str(HERE / source), str(directory / f"{name}.o"), extra=extra)
     imported = set()
