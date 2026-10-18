@@ -33,6 +33,7 @@ struct NetCtlDefaultRoute {
 
 extern "C" {
 int APS5_VABI sceNetCtlGetInfo(int, NetCtlInfo*);
+int APS5_VABI sceNetCtlGetNatInfo(NetCtlNatInfo*);
 int APS5_VABI sceNetCtlGetState(int*);
 #ifdef __APPLE__
 std::size_t NetCtlDefaultRoutes_nid_no_patch(const char*, std::size_t, NetCtlDefaultRoute*, std::size_t);
@@ -185,6 +186,7 @@ int main() {
     Require(QueryWord(4) == 1);
     Require(QueryWord(11) == 0);
     Require(QueryWord(19) == 0);
+    Require(QueryWord(21) == 0);
 
     const auto address = QueryAddress(14);
     const auto host = ntohl(address.s_addr);
@@ -201,7 +203,7 @@ int main() {
         Require(sceNetCtlGetInfo(code, &info) == 0 && info.opaque[0] == 0);
     }
 
-    for (const int code : {5, 6, 7, 8, 9, 10, 21}) {
+    for (const int code : {5, 6, 7, 8, 9, 10}) {
         bool threw = false;
         try {
             sceNetCtlGetInfo(code, &info);
@@ -210,4 +212,8 @@ int main() {
         }
         Require(threw);
     }
+
+    Require(sceNetCtlGetNatInfo(nullptr) == kErrInvalidAddr);
+    NetCtlNatInfo nat_info{};
+    Require(sceNetCtlGetNatInfo(&nat_info) == kErrNotConnected);
 }
