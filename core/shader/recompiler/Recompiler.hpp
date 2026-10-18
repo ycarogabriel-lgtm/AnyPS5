@@ -272,7 +272,6 @@ struct SpirvTarget {
     bool float16DenormPreserve = false;
     bool spannedWaves = false;
     bool fragmentBarycentricBuiltins = false;
-    bool clipDistancesInPerVertexBlock = false;
     bool robustBufferAccess2 = false;
 };
 
