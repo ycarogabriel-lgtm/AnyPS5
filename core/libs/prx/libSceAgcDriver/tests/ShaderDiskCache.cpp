@@ -84,7 +84,7 @@ void removeCacheDirectory(const std::filesystem::path& directory) {
 }
 
 bool sameBinding(const DescriptorBinding& left, const DescriptorBinding& right) {
-    return left.kind == right.kind && left.role == right.role && left.descriptorSet == right.descriptorSet && left.binding == right.binding && left.count == right.count && left.guestDescriptor == right.guestDescriptor && left.readOnly == right.readOnly && left.imageShape == right.imageShape && left.samplerDepthCompare == right.samplerDepthCompare && left.imageWritten == right.imageWritten && left.imageDepthCompare == right.imageDepthCompare && left.imageAtomic == right.imageAtomic && left.imageShapes == right.imageShapes && left.bufferAtomic == right.bufferAtomic && left.bufferWritten == right.bufferWritten && left.bufferRead == right.bufferRead && left.samplerUnnormalized == right.samplerUnnormalized && left.samplerIntegerBorder == right.samplerIntegerBorder && left.samplerCoordinatesIgnored == right.samplerCoordinatesIgnored && left.imageUnnormalized == right.imageUnnormalized && left.imageUnnormalizedBaseLevel == right.imageUnnormalizedBaseLevel && left.imageSamplers == right.imageSamplers;
+    return left.kind == right.kind && left.role == right.role && left.descriptorSet == right.descriptorSet && left.binding == right.binding && left.count == right.count && left.guestDescriptor == right.guestDescriptor && left.readOnly == right.readOnly && left.imageShape == right.imageShape && left.samplerDepthCompare == right.samplerDepthCompare && left.imageWritten == right.imageWritten && left.imageDepthCompare == right.imageDepthCompare && left.imageAtomic == right.imageAtomic && left.imageShapes == right.imageShapes && left.bufferAtomic == right.bufferAtomic && left.bufferWritten == right.bufferWritten && left.bufferRead == right.bufferRead && left.bufferExtent == right.bufferExtent && left.samplerUnnormalized == right.samplerUnnormalized && left.samplerIntegerBorder == right.samplerIntegerBorder && left.samplerCoordinatesIgnored == right.samplerCoordinatesIgnored && left.imageUnnormalized == right.imageUnnormalized && left.imageUnnormalizedBaseLevel == right.imageUnnormalizedBaseLevel && left.imageSamplers == right.imageSamplers;
 }
 
 bool sameBindings(const std::vector<DescriptorBinding>& left, const std::vector<DescriptorBinding>& right) {
@@ -125,6 +125,7 @@ void requireSameResult(const RecompileResult& left, const RecompileResult& right
     const std::string prefix = std::string(what) + ": ";
     require(sameBindings(left.bindings, right.bindings), prefix + "bindings differ");
     require(left.pushConstants == right.pushConstants, prefix + "push constants differ");
+    require(left.readsDepthRemapPush == right.readsDepthRemapPush, prefix + "depth remap push reads differ");
     require(left.specialization == right.specialization, prefix + "specialization constants differ");
     require(left.workgroupMemoryDwords == right.workgroupMemoryDwords, prefix + "workgroup memory stride differs");
     require(left.poisonedSrtReads == right.poisonedSrtReads, prefix + "poisoned SRT read counts differ");
@@ -181,6 +182,7 @@ DescriptorBinding sampleBinding(std::uint32_t seed) {
     binding.imageUnnormalizedBaseLevel = {false, true, seed % 3 == 0};
     binding.imageSamplers = {0x5u, 0u, 0x80000000u};
     binding.bufferRead = {true, false, false, true, true, false};
+    binding.bufferExtent = {32, 0, 16, 4096, 8, 0};
     return binding;
 }
 
@@ -195,6 +197,7 @@ RecompileResult sampleResult() {
     result.bindings[1].role = DescriptorRole::GuestBuffers;
     result.bindings[1].imageShape.reset();
     result.pushConstants = {std::byte{1}, std::byte{0xff}, std::byte{0}, std::byte{0x80}, std::byte{7}};
+    result.readsDepthRemapPush = true;
     result.bdaAbiVersion = 3;
     result.memoryOffsetDword = 7;
     result.hostSubgroupSize = 32;
