@@ -440,6 +440,8 @@ if(BUILD_TESTING)
         set_tests_properties(guest_none_relocations PROPERTIES TIMEOUT 20)
         add_test(NAME optional_plt COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/test_optional_plt.py $<TARGET_FILE:relinker>)
+        add_test(NAME optional_rela COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/test_optional_rela.py $<TARGET_FILE:relinker>)
         add_test(NAME empty_tls COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/test_empty_tls.py $<TARGET_FILE:relinker>)
         add_test(NAME windows_tls_protected_entries COMMAND ${Python3_EXECUTABLE}
@@ -502,6 +504,8 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/test_windows_tls_thread_pointer.py $<TARGET_FILE:relinker>)
         add_test(NAME windows_bss COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/test_windows_bss.py $<TARGET_FILE:relinker>)
+        add_test(NAME windows_sparse_load COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/test_windows_sparse_load.py $<TARGET_FILE:relinker>)
         add_test(NAME windows_icon COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/relinker/tests/test_windows_icon.py $<TARGET_FILE:relinker>)
         add_test(NAME linux_desktop_entry_output COMMAND ${Python3_EXECUTABLE}
@@ -696,14 +700,8 @@ if(BUILD_TESTING)
     )
     add_test(NAME windows_icon_resource COMMAND windows_icon_resource_tests)
 
-    add_test_executable(entry_stub_tests
-        ${CMAKE_CURRENT_SOURCE_DIR}/elfpatcher/tests/EntryStubTests.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/elfpatcher/src/general/EntryStubBuilder.cpp
-    )
-    target_include_directories(entry_stub_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/elfpatcher/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/domain/include
-    )
+    add_test_executable(entry_stub_tests ${CMAKE_CURRENT_SOURCE_DIR}/elfpatcher/tests/EntryStubTests.cpp)
+    target_link_libraries(entry_stub_tests PRIVATE relinker_core)
     add_test(NAME entry_stub COMMAND entry_stub_tests)
 
     add_test_executable(control_flow_graph_tests

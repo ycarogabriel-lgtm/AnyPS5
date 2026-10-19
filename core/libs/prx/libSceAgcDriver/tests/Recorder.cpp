@@ -38,6 +38,7 @@
 #include "VertexRange_vert_spv.h"
 #include "VertexRangeProducer_frag_spv.h"
 #include "prx/libSceAgcDriver/Graphics/include/ColorTargetTransfer.hpp"
+#include "BdaAbi.hpp"
 #include <SDL_loadso.h>
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -579,6 +580,39 @@ void copiedDirectOrderingTests(const Device& device, Recorder& recorder) {
     update(direct, 2);
     recorder.Sync();
     Require(*block == 45, "direct consumers lost GPU-ordered updates");
+    {
+        std::array<std::uint32_t, 1024> unregistered{};
+        struct Finish {
+            Recorder& recorder;
+            ~Finish() { recorder.Sync(); }
+        } finish{recorder};
+        const auto copiedAddress = reinterpret_cast<std::uint64_t>(unregistered.data());
+        auto mixedProgram = program;
+        auto& mixedBinding = mixedProgram.bindings[0];
+        mixedBinding.count = 2;
+        mixedBinding.guestDescriptor.insert(mixedBinding.guestDescriptor.end(), {static_cast<std::uint32_t>(copiedAddress), static_cast<std::uint32_t>(copiedAddress >> 32u) & 0xffffu, 1024, 0x31000000u});
+        mixedBinding.bufferWritten = {true, true};
+        const CompiledShader mixedCompute{ShaderRecompiler::ShaderStage::Compute, &mixedProgram, 0};
+        for (const bool draw : {false, true}) {
+            auto mixed = std::make_shared<ShaderResources>(context, mixedCompute);
+            Require(mixed->HasCopiedWrites() && mixed->WritesOverlap(address, 4) && !mixed->CopiedWritesOverlap(address, 4) && mixed->CopiedWritesOverlap(copiedAddress, 4), "the mixed producer did not retain direct and CPU-copied writes");
+            auto& pending = draw ? *DrawCopiedWriters() : writers;
+            static_cast<void>(recorder.Commands());
+            recorder.Keep(mixed);
+            mixed->MarkGpuWrites(recorder);
+            pending.push_back(mixed);
+            auto completed = std::make_shared<unsigned>(0);
+            recorder.OnComplete([mixed, &pending, completed] {
+                mixed->WriteBackBuffers();
+                std::erase(pending, mixed);
+                ++*completed;
+            });
+            Require(!CompletePendingCpuWrites(context, address, 4), "a direct write in a mixed producer caused a CPU write-back wait");
+            Require(*completed == 0 && !pending.empty(), "a disjoint copied write-back was completed while binding a direct buffer");
+            Require(CompletePendingCpuWrites(context, copiedAddress, 4), "a CPU-copied write in a mixed producer was not completed");
+            Require(*completed == 1 && pending.empty(), "the required CPU write-back did not release the mixed producer");
+        }
+    }
     {
         TextureDetiler detiler(context);
         auto imageContext = context;
@@ -3056,7 +3090,8 @@ void drawDescriptorWriteTests(const Device& device, Recorder& recorder) {
         const auto original = updates.calls.front();
         Require(original.buffers.size() == 2 && original.images.size() == 2, "descriptor test lacks mixed bindings and an image array");
         for (std::size_t allocation = 0; allocation < 2; ++allocation) {
-            const ShaderResources::MovedBuffer moved{allocation, 0, 16, {5, 6, 7, 8}};
+            const std::array<std::uint32_t, 4> words{5, 6, 7, 8};
+            const ShaderResources::MovedBuffer moved{allocation, 0, 16, words};
             const auto draw = resources.PrepareDrawBindings(snapshots, std::span(&moved, 1));
             Require(draw != nullptr && draw->snapshots.size() == 1, "moved shader data did not create a draw snapshot");
             Require(updates.calls.size() == allocation + 2 && updates.copies == 0, "draw descriptors copied GPU memory or needed multiple updates");
@@ -3140,7 +3175,8 @@ void drawSnapshotTableSetTests(const Device& device, Recorder& recorder) {
         const ColorTarget target{};
         ShaderResources resources(context, vertex, fragment, target, 0, 0);
         Require(resources.SplitSets(), "a fragment image table did not get its own descriptor set");
-        const ShaderResources::MovedBuffer moved{0, 0, 16, {5, 6, 7, 8}};
+        const std::array<std::uint32_t, 4> movedWords{5, 6, 7, 8};
+        const ShaderResources::MovedBuffer moved{0, 0, 16, movedWords};
         const auto draw = resources.PrepareDrawBindings(snapshots, std::span(&moved, 1));
         Require(draw != nullptr && draw->snapshots.size() == 1, "moved shader data did not create a draw snapshot");
         const auto& written = updates.calls.back().written;
@@ -7010,6 +7046,31 @@ void multisampleGuestAccessTests(const Device& device, Recorder& recorder) {
     refused([&] { AgcDriver::GuestMemory::ReadCommitted(address + 256u, texels); }, "a CPU read", "a committed CPU read");
     refused([&] { AgcDriver::GuestMemory::ReadCommittedUnsynced(address + 256u, texels); }, "a CPU read", "a committed CPU read without the flush hook");
     refused([&] { RequireNoMultisampleTarget(address, 64u, "a DMA copy"); }, "a DMA copy", "a DMA copy");
+    const auto captureSrt = [](std::uint64_t srt, AgcDriver::ShaderMemory::PendingWriteQuery pendingWrite) {
+        static constexpr std::array<std::uint32_t, 6> code{0xf4080100u, 0xfa000000u, 0xbf8cc07fu, 0xe0700000u, 0x80010000u, 0xbf810000u};
+        const std::array<std::uint32_t, 2> userData{static_cast<std::uint32_t>(srt), static_cast<std::uint32_t>(srt >> 32u)};
+        ShaderRecompiler::RecompileRequest request{};
+        request.shader = {ShaderRecompiler::ShaderStage::Compute, 0x24000u, code, 0, {}};
+        request.context.waveSize = 32u;
+        request.context.userDataBaseRegister = 0;
+        request.context.userData = userData;
+        request.context.compute = ShaderRecompiler::ShaderComputeStageInfo{{32u, 1u, 1u}, 0u, {false, false, false}, false, 1u};
+        request.target.vulkanVersion = 0x00401000u;
+        request.target.spirvVersion = 0x00010300u;
+        request.target.subgroupSize = 32;
+        request.target.bdaAbiVersion = ShaderRecompiler::BdaAbi::Version;
+        request.layout.pushConstantSizeBytes = 128;
+        AgcDriver::ShaderMemory memory({}, pendingWrite);
+        static_cast<void>(memory.Capture(request));
+    };
+    refused([&] { captureSrt(address + 256u, nullptr); }, "a CPU read", "a shader capture");
+    captureSrt(address + 4u * 65536u + 256u, nullptr);
+    refused([&] { captureSrt(address + 256u, nullptr); }, "a CPU read", "a shader capture on a pooled page");
+    const auto raw = [](std::uint64_t, std::size_t, std::span<std::byte>) { return AgcDriver::ShaderMemory::PendingWrite::Raw; };
+    const auto synced = [](std::uint64_t, std::size_t, std::span<std::byte>) { return AgcDriver::ShaderMemory::PendingWrite::Sync; };
+    refused([&] { captureSrt(address + 256u, raw); }, "a CPU read", "a shader capture's raw word read");
+    refused([&] { captureSrt(address + 256u, synced); }, "a CPU read", "a shader capture's synced word read");
+    captureSrt(address + 4u * 65536u + 256u, raw);
     ShaderRecompiler::RecompileResult program;
     ShaderRecompiler::DescriptorBinding binding;
     binding.kind = ShaderRecompiler::DescriptorKind::SampledImage;
