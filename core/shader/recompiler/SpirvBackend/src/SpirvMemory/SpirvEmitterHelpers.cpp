@@ -306,7 +306,7 @@ void DefineInputs(SpirvEmitterState& state) {
         state.sampleMaskInputVariable = DefineInterfaceVariable(state, SampleMaskArrayType(state), spv::StorageClassInput, "gl_SampleMaskIn");
         state.module.AddAnnotation(spv::OpDecorate, state.sampleMaskInputVariable, spv::DecorationBuiltIn, spv::BuiltInSampleMask);
         state.module.AddAnnotation(spv::OpDecorate, state.sampleMaskInputVariable, spv::DecorationFlat);
-        if (state.inputInfo.pixel->psSampleShading && InputVariableForKind(state, StageInputKind::SampleId) == 0) {
+        if (state.program.Metadata().pixelIteratesSamples && InputVariableForKind(state, StageInputKind::SampleId) == 0) {
             state.ownSampleIdVariable = DefineInterfaceVariable(state, TypeI32(state), spv::StorageClassInput, "gl_SampleID");
             state.module.AddAnnotation(spv::OpDecorate, state.ownSampleIdVariable, spv::DecorationBuiltIn, spv::BuiltInSampleId);
             state.module.AddAnnotation(spv::OpDecorate, state.ownSampleIdVariable, spv::DecorationFlat);

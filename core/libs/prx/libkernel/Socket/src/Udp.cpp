@@ -1113,7 +1113,16 @@ int APS5_VABI connect_nid_postfix(int descriptor, const void* address, std::uint
         std::lock_guard lock(socket->modeMutex);
         socket->options.reportedError = 0;
     }
+#ifdef __APPLE__
+    bool nonblocking = false;
+    {
+        std::lock_guard lock(socket->modeMutex);
+        nonblocking = socket->options.nonblocking;
+    }
+    return ConnectRetryingLoopbackReset_nid_no_patch(socket->value, reinterpret_cast<const sockaddr*>(&native), size, socket->type == 1 && !nonblocking) ? Fail(ConnectError()) : 0;
+#else
     return ::connect(socket->value, reinterpret_cast<sockaddr*>(&native), size) ? Fail(ConnectError()) : 0;
+#endif
 }
 int APS5_VABI listen_nid_postfix(int descriptor, int backlog) {
     const auto socket = Lookup(descriptor);
