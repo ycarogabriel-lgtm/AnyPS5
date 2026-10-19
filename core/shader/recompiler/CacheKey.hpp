@@ -213,6 +213,7 @@ private:
         append(key, value.fetchBufferReg);
         append(key, value.fetchEmbedded);
         append(key, value.paClVsOutCntl);
+        append(key, value.depthRemapMode);
         if (value.resourcesNum > value.resources.size()) throw std::runtime_error("Shader cache: invalid vertex resource count");
         append(key, value.resourcesNum);
         for (std::uint32_t i = 0; i < value.resourcesNum; ++i) {
@@ -263,6 +264,7 @@ private:
         append(key, value.narrowSubgroupClock);
         append(key, value.fragmentBarycentricBuiltins);
         append(key, value.float64DenormPreserve);
+        append(key, value.depthRangeRemap);
         append(key, value.registrationModules);
         append(key, value.registrationWordLimit);
         append(key, value.vertexSubgroups);

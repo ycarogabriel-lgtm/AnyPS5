@@ -166,6 +166,23 @@ int main() {
     *__error_nid_postfix() = 0;
     Require(fstat_nid_disambig1_nid_postfix(pair[0], &status) == -1 && *__error_nid_postfix() == 9);
     Require(sceKernelFstat(pair[1], &status) == static_cast<int>(0x80020009u));
+#ifndef _WIN32
+    const char probe[] = "ping";
+    Require(socketpair_nid_postfix(Unix, Stream, 0, pair) == 0);
+    Require(shutdown_nid_postfix(pair[0], 0) == 0 && shutdown_nid_postfix(pair[0], 2) == 0);
+    Require(send_nid_postfix(pair[0], probe, sizeof(probe), NoSignal) == -1 && *__error_nid_postfix() == 32);
+    Require(shutdown_nid_postfix(pair[0], 2) == 0 && shutdown_nid_postfix(pair[0], 1) == 0);
+    Require(close_nid_postfix(pair[0]) == 0 && close_nid_postfix(pair[1]) == 0);
+    Require(socketpair_nid_postfix(Unix, Stream, 0, pair) == 0);
+    Require(shutdown_nid_postfix(pair[0], 1) == 0 && shutdown_nid_postfix(pair[0], 1) == 0);
+    Require(close_nid_postfix(pair[0]) == 0 && close_nid_postfix(pair[1]) == 0);
+#endif
+#ifdef __APPLE__
+    Require(socketpair_nid_postfix(Unix, Stream, 0, pair) == 0);
+    Require(close_nid_postfix(pair[1]) == 0);
+    Require(shutdown_nid_postfix(pair[0], 0) == -1 && *__error_nid_postfix() == 57);
+    Require(close_nid_postfix(pair[0]) == 0);
+#endif
 
     Require(socketpair_nid_postfix(Unix, Datagram, 0, pair) == 0);
     Require(fcntl_nid_postfix(pair[0], 3) == 2);

@@ -213,6 +213,7 @@ struct ShaderVertexStageInfo {
     std::uint32_t fetchBufferReg;
     bool fetchEmbedded;
     std::uint32_t paClVsOutCntl = 0;
+    std::uint32_t depthRemapMode = 0;
 };
 
 struct ShaderFloatMode {
@@ -289,6 +290,7 @@ struct SpirvTarget {
     bool spannedWaves = false;
     bool fragmentBarycentricBuiltins = false;
     bool robustBufferAccess2 = false;
+    bool depthRangeRemap = false;
 };
 
 struct BindingLayout {
@@ -345,6 +347,8 @@ inline constexpr std::uint32_t MeshDrawPushOffsetBytes = 104;
 inline constexpr std::uint32_t MeshDrawPushBytes = 24;
 inline constexpr std::uint32_t TessellationLevelPushOffsetBytes = 120;
 inline constexpr std::uint32_t TessellationLevelPushBytes = 8;
+inline constexpr std::uint32_t DepthRemapPushOffsetBytes = 104;
+inline constexpr std::uint32_t DepthRemapPushBytes = 8;
 inline constexpr std::uint32_t MeshArgumentAddressDword = 4;
 inline constexpr std::uint32_t MeshArgumentIndexCountDword = 3;
 inline constexpr std::uint32_t MeshArgumentFirstIndexDword = 4;
@@ -453,6 +457,7 @@ struct DescriptorBinding {
     std::vector<bool> imageUnnormalizedBaseLevel;
     std::vector<std::uint32_t> imageSamplers;
     std::vector<bool> bufferRead;
+    std::vector<std::uint32_t> bufferExtent;
 };
 
 struct ImageTableEntryPoison {
@@ -643,6 +648,7 @@ struct ShaderInvocation {
     std::uint64_t specializationId = 0;
     std::vector<DescriptorBinding> bindings;
     std::vector<std::byte> pushConstants;
+    bool readsDepthRemapPush = false;
     std::vector<VertexAttribute> vertexAttributes;
     std::uint32_t poisonedSrtReads = 0;
     std::vector<ImageTableEntryPoison> imageTablePoison;
