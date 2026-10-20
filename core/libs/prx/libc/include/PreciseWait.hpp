@@ -172,7 +172,9 @@ inline void PreciseSleepFromNanosWithSlack(std::uint64_t startNanos, unsigned lo
     constexpr unsigned long long kSpinTailNanos = 100000ULL;
     if (nanos > kSpinTailNanos) [[unlikely]] {
 #ifdef __APPLE__
-        const unsigned long long sleepNanos = (nanos - kSpinTailNanos) / 4ULL * 3ULL;
+        const unsigned long long sleepNanos = nanos > 24000000ULL
+            ? nanos - 6000000ULL
+            : (nanos - kSpinTailNanos) / 4ULL * 3ULL;
 #else
         const unsigned long long sleepNanos = nanos - kSpinTailNanos;
 #endif
