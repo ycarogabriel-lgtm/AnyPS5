@@ -2168,6 +2168,13 @@ int APS5_VABI sceNetInetPton(int af, const char* src, void* dst) {
         return fail(NET_EINVAL);
     }
     const auto convert = [](int family, const std::string& text, unsigned char* address) {
+#ifdef __APPLE__
+        if (family == AF_INET) {
+            for (std::size_t i = 0; i + 1 < text.size(); ++i) {
+                if (text[i] == '0' && (i == 0 || text[i - 1] == '.') && text[i + 1] >= '0' && text[i + 1] <= '9') return 0;
+            }
+        }
+#endif
 #ifdef _WIN32
         return InetPtonA(family, text.c_str(), address);
 #else
@@ -2182,11 +2189,6 @@ int APS5_VABI sceNetInetPton(int af, const char* src, void* dst) {
         return 0;
     }
     const std::string text = af == NET_AF_INET || dottedTail ? head : std::string(src);
-    if (af == NET_AF_INET) {
-        for (std::size_t i = 0; i + 1 < text.size(); ++i) {
-            if ((i == 0 || text[i - 1] == '.') && text[i] == '0' && text[i + 1] >= '0' && text[i + 1] <= '9') return 0;
-        }
-    }
     const int converted = convert(af == NET_AF_INET ? AF_INET : AF_INET6, text, address.data());
     if (converted == 1 && dst != nullptr) {
         std::memcpy(dst, address.data(), af == NET_AF_INET ? 4 : 16);
