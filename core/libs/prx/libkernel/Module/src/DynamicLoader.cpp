@@ -28,9 +28,14 @@
 #include <mach-o/dyld.h>
 #else
 #include <dlfcn.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <mach-o/loader.h>
+#else
 #include <link.h>
 #ifdef __linux__
 #include <unistd.h>
+#endif
 #endif
 #endif
 
@@ -77,6 +82,9 @@ struct Module {
 #endif
 #ifdef _WIN32
     std::uintptr_t globalOrder = 0;
+#endif
+#ifdef __APPLE__
+    const void* image = nullptr;
 #endif
     ~Module() {
         if (owned && native) {
@@ -326,9 +334,14 @@ void* APS5_VABI dlopen_nid_postfix(const char* path, int flags) {
         const int nativeFlags = ((flags & 3) == 1 ? RTLD_LAZY : RTLD_NOW) |
             ((flags & 0x100) ? RTLD_GLOBAL : RTLD_LOCAL);
 #endif
-#endif
         module->native = ::dlopen(path ? resolved.c_str() : nullptr, nativeFlags);
-        if (!module->native) { Error(::dlerror()); return nullptr; }
+        if (!module->native) {
+            if (path) LoadFailure(source, resolved, ::dlerror()); else Error(::dlerror());
+            return nullptr;
+        }
+#ifdef __linux__
+        if (path) InitializeLinuxGuestModule(module->native);
+#endif
 #ifdef __APPLE__
         if (path && !module->global) {
             for (std::uint32_t index = 0; index < _dyld_image_count() && module->image == nullptr; ++index) {
@@ -338,6 +351,7 @@ void* APS5_VABI dlopen_nid_postfix(const char* path, int flags) {
                 ::dlclose(loaded);
             }
         }
+#endif
 #endif
         std::lock_guard lock(modulesMutex);
         const auto handle = nextHandle++;
