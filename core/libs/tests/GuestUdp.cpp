@@ -171,12 +171,7 @@ int main() {
     Require(getsockname_nid_postfix(receiver, destination.data(), &size) == 0 && size == 16);
     Require(destination[2] || destination[3]);
     Require(connect_nid_postfix(sender, destination.data(), destination.size()) == 0);
-#ifdef __APPLE__
-    const int addressed = socket_nid_postfix(2, 2, 17);
-    Require(addressed >= 0);
-#else
     const int addressed = sender;
-#endif
     char vectorHead[] = "atomic ";
     char vectorTail[] = "datagram";
     Iovec vectorOutput[]{{vectorHead, sizeof(vectorHead) - 1}, {vectorTail, sizeof(vectorTail)}};
@@ -288,9 +283,6 @@ int main() {
     Require(ioctl_nid_postfix(receiver, 0x4004667f, &queued) == -1);
     Require(_ioctl_nid_postfix(receiver, 0x4004667f, &queued) == -1 && *__error_nid_postfix() == 9);
     Require(close_nid_postfix(sender) == 0);
-#ifdef __APPLE__
-    Require(close_nid_postfix(addressed) == 0);
-#endif
     const int peer = socket_nid_postfix(2, 2, 0);
     const int other = socket_nid_postfix(2, 2, 0);
     const int dissolved = socket_nid_postfix(2, 2, 0);
