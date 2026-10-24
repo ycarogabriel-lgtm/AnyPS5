@@ -469,7 +469,11 @@ bool GetRules(_Unwind_Context& context, Frame& frame, Rules& rules) {
     if (!DecodeFrame(context, frame)) {
 #if defined(_WIN32) || defined(__APPLE__)
         frame = {};
+#ifdef __APPLE__
+        if (!VirtualUnwind(context, frame.caller)) return false;
+#else
         if (!VirtualUnwind(context, frame)) return false;
+#endif
         frame.foreign = true;
         return true;
 #else

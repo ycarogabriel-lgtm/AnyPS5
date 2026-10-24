@@ -28,7 +28,6 @@
 #include <system_error>
 #include <unordered_map>
 #include "prx/libc/include/specifics/linux/ElfTypes.hpp"
-#include "prx/libc/include/specifics/linux/ElfTypes.hpp"
 #include "prx/libc/include/specifics/macos/ExecutablePath.hpp"
 #else
 #include <dlfcn.h>
@@ -238,7 +237,6 @@ std::uint64_t GuestSegmentBytes() {
     return bytes;
 }
 
-#ifndef __APPLE__
 bool SystemImage(const GuestImage& image) {
 #ifdef __APPLE__
     if (image.native == _dyld_get_image_header(0)) return false;
@@ -250,7 +248,6 @@ bool SystemImage(const GuestImage& image) {
 #endif
     return !path.empty() && !path.ends_with(GuestModuleSuffix);
 }
-#endif
 #else
 bool SectionNamed(const IMAGE_SECTION_HEADER& section, const char* name) {
     return std::strncmp(reinterpret_cast<const char*>(section.Name), name, IMAGE_SIZEOF_SHORT_NAME) == 0;
@@ -447,10 +444,10 @@ int APS5_VABI sceKernelGetModuleInfoFromAddr(std::uint64_t address, int flags, M
 #elif defined(__APPLE__)
     ImageSearch<ModuleInfoEx> search{static_cast<std::uintptr_t>(address), &result, false};
     dl_iterate_phdr(FindImage<ModuleInfoEx>, &search);
-    if (!search.found) return SCE_KERNEL_ERROR_ESRCH;
     Dl_info image{};
-    if (!dladdr(reinterpret_cast<const void*>(address), &image) || image.dli_fbase == nullptr) return SCE_KERNEL_ERROR_ESRCH;
-    result.id = ModuleIdForImage_nid_no_patch(image.dli_fbase);
+    const bool found = search.found && dladdr(reinterpret_cast<const void*>(address), &image) && image.dli_fbase != nullptr;
+    if (found) result.id = ModuleIdForImage_nid_no_patch(image.dli_fbase);
+    const GuestImage guestImage{image.dli_fbase, 0};
 #else
     Dl_info symbol{};
     link_map* native = nullptr;
@@ -459,9 +456,9 @@ int APS5_VABI sceKernelGetModuleInfoFromAddr(std::uint64_t address, int flags, M
         dl_iterate_phdr(FindImage<ModuleInfoEx>, &search);
     const bool found = search.found;
     if (found) result.id = ModuleIdForImage_nid_no_patch(native);
-    const GuestImage image{native, 0};
+    const GuestImage guestImage{native, 0};
 #endif
-    if (!found || (flags == 2 && SystemImage(image))) {
+    if (!found || (flags == 2 && SystemImage(guestImage))) {
         *info = {};
         return SCE_KERNEL_ERROR_ESRCH;
     }
