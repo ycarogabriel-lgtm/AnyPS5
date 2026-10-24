@@ -320,8 +320,12 @@ void* APS5_VABI dlopen_nid_postfix(const char* path, int flags) {
 #else
         const auto source = path ? ResolvePath_nid_no_patch(path) : std::filesystem::path{};
         const auto resolved = path ? RelinkedModulePath_nid_no_patch(source) : std::filesystem::path{};
+#ifdef __APPLE__
+        const int nativeFlags = ((flags & 3) == 1 ? RTLD_LAZY : RTLD_NOW) | RTLD_GLOBAL;
+#else
         const int nativeFlags = ((flags & 3) == 1 ? RTLD_LAZY : RTLD_NOW) |
             ((flags & 0x100) ? RTLD_GLOBAL : RTLD_LOCAL);
+#endif
 #endif
         module->native = ::dlopen(path ? resolved.c_str() : nullptr, nativeFlags);
         if (!module->native) { Error(::dlerror()); return nullptr; }
