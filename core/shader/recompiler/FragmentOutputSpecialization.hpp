@@ -34,9 +34,8 @@ inline std::vector<std::uint32_t> SpecializeFragmentOutputs(std::vector<std::uin
             reversed = constant.value;
         }
         if (constant.id < PipelineSpecialization::ExportPackingBase || constant.id >= PipelineSpecialization::ExportPackingBase + 8u) continue;
-        if (constant.value > static_cast<std::uint32_t>(ColorExportPacking::RawSint)) throw std::runtime_error("invalid prepared fragment export packing");
-        if (constant.value == static_cast<std::uint32_t>(ColorExportPacking::Unorm10_11_11) || constant.value == static_cast<std::uint32_t>(ColorExportPacking::Float11_11_10)) packed.insert(constant.id - PipelineSpecialization::ExportPackingBase);
-        if (constant.value == static_cast<std::uint32_t>(ColorExportPacking::RawUint) || constant.value == static_cast<std::uint32_t>(ColorExportPacking::RawSint)) raw.emplace(constant.id - PipelineSpecialization::ExportPackingBase, constant.value == static_cast<std::uint32_t>(ColorExportPacking::RawSint));
+        if (constant.value > static_cast<std::uint32_t>(ColorExportPacking::Unorm4_4_4_4)) throw std::runtime_error("invalid prepared fragment export packing");
+        if (constant.value != static_cast<std::uint32_t>(ColorExportPacking::None)) packed.insert(constant.id - PipelineSpecialization::ExportPackingBase);
     }
     if (packed.empty() && raw.empty() && !dualSource && reversed == 0u) return words;
     if (words.size() < 5u || words[0] != spv::MagicNumber) throw std::runtime_error("invalid fragment output specialization module");

@@ -150,14 +150,12 @@ int main() {
     Require(close_nid_postfix(client) == 0);
     Require(Readable(server, In | Hup) && read_nid_postfix(server, received, sizeof(received)) == 0);
     Require(sceKernelRead(server, received, sizeof(received)) == 0);
-#ifndef _WIN32
     std::int64_t written = 0;
     for (int i = 0; i < 2000 && (written >= 0 || *__error_nid_postfix() == 54); ++i) {
         written = write_nid_postfix(server, request, sizeof(request));
         if (written >= 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     Require(written == -1 && *__error_nid_postfix() == 32);
-#endif
     Require(close_nid_postfix(server) == 0);
     *__error_nid_postfix() = 0;
     Require(read_nid_postfix(server, received, sizeof(received)) == -1 && *__error_nid_postfix() == 9);
