@@ -2159,13 +2159,6 @@ int APS5_VABI sceNetInetPton(int af, const char* src, void* dst) {
     if (af != NET_AF_INET && af != NET_AF_INET6) {
         return fail(NET_EAFNOSUPPORT);
     }
-    const std::string text = af == NET_AF_INET ? std::string(src, std::strcspn(src, " \t\n\v\f\r")) : std::string(src);
-    if (af == NET_AF_INET) {
-        for (std::size_t i = 0; i + 1 < text.size(); ++i) {
-            if ((i == 0 || text[i - 1] == '.') && text[i] == '0' && text[i + 1] >= '0' && text[i + 1] <= '9') return 0;
-        }
-    }
-    std::array<unsigned char, 16> address{};
     if (dst == nullptr && af == NET_AF_INET6) {
         return fail(NET_EINVAL);
     }
@@ -2184,6 +2177,11 @@ int APS5_VABI sceNetInetPton(int af, const char* src, void* dst) {
         return 0;
     }
     const std::string text = af == NET_AF_INET || dottedTail ? head : std::string(src);
+    if (af == NET_AF_INET) {
+        for (std::size_t i = 0; i + 1 < text.size(); ++i) {
+            if ((i == 0 || text[i - 1] == '.') && text[i] == '0' && text[i + 1] >= '0' && text[i + 1] <= '9') return 0;
+        }
+    }
     const int converted = convert(af == NET_AF_INET ? AF_INET : AF_INET6, text, address.data());
     if (converted == 1 && dst != nullptr) {
         std::memcpy(dst, address.data(), af == NET_AF_INET ? 4 : 16);
