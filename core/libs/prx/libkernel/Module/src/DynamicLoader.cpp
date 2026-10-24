@@ -335,7 +335,6 @@ void* APS5_VABI dlopen_nid_postfix(const char* path, int flags) {
             }
         }
 #endif
-#endif
         std::lock_guard lock(modulesMutex);
         const auto handle = nextHandle++;
 #ifdef _WIN32

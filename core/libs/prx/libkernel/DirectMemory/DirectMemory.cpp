@@ -472,6 +472,8 @@ public:
         } else if (!GuestArena::GuestArenaForgetReusableSection_nid_no_patch(section) || !SectionPool::Get().Keep(section, bytes)) {
             CloseHandle(section);
         }
+#elif defined(__APPLE__)
+        mach_port_deallocate(mach_task_self(), entry);
 #else
         if (hostWriteView != nullptr) ::munmap(hostWriteView, bytes);
 #endif
