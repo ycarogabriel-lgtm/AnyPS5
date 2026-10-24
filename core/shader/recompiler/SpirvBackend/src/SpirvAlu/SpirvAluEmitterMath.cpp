@@ -675,9 +675,7 @@ std::uint32_t EmitConvertU8U32(SpirvEmitterState& state, std::uint32_t arg0) {
 }
 
 std::uint32_t EmitConvertF16F32(SpirvEmitterState& state, std::uint32_t arg0) {
-    const auto pair = state.module.AllocateId();
-    state.module.AddFunction(spv::OpCompositeConstruct, TypeF32Vector(state, 2), pair, arg0, ConstantF32(state, 0u));
-    return EmitPackHalf2x16(state, pair);
+    return EmitF32ToF16BitsRte(state, arg0);
 }
 
 std::uint32_t EmitConvertS32F32(SpirvEmitterState& state, std::uint32_t arg0) {
@@ -1423,14 +1421,17 @@ std::uint32_t EmitFPUnordGreaterThanEqual32(SpirvEmitterState& state, std::uint3
 }
 
 std::uint32_t EmitFPAdd32(SpirvEmitterState& state, std::uint32_t arg0, std::uint32_t arg1) {
+    if (state.fusedExactArithmetic) return EmitGlsl<GLSLstd450Fma, IrType::F32>(state, ConstantF32(state, 0x3f800000u), arg0, arg1);
     return Exact(state, EmitNative<spv::OpFAdd, IrType::F32>(state, arg0, arg1));
 }
 
 std::uint32_t EmitFPSub32(SpirvEmitterState& state, std::uint32_t arg0, std::uint32_t arg1) {
+    if (state.fusedExactArithmetic) return EmitGlsl<GLSLstd450Fma, IrType::F32>(state, ConstantF32(state, 0xbf800000u), arg1, arg0);
     return Exact(state, EmitNative<spv::OpFSub, IrType::F32>(state, arg0, arg1));
 }
 
 std::uint32_t EmitFPMul32(SpirvEmitterState& state, std::uint32_t arg0, std::uint32_t arg1) {
+    if (state.fusedExactArithmetic) return EmitGlsl<GLSLstd450Fma, IrType::F32>(state, arg0, arg1, ConstantF32(state, 0x80000000u));
     return Exact(state, EmitNative<spv::OpFMul, IrType::F32>(state, arg0, arg1));
 }
 

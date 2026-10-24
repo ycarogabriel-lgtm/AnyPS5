@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <utility>
 
 namespace AgcDriver::Graphics {
 
@@ -26,6 +27,15 @@ void RetireUnmappedDepth_nid_no_patch(std::uintptr_t address, std::size_t bytes)
 void RequireNoNativeDepthFeedback_nid_no_patch(const Context& context, const DepthTarget& target, std::span<const std::shared_ptr<Texture>> sampled);
 void ClearDepthSurfaces(VkDevice device);
 void RetireDepthSurfaces(VkDevice device, std::uint64_t address, std::uint64_t bytes);
+struct WrittenStorageExtent {
+    std::uint64_t address;
+    std::uint32_t width;
+    std::uint32_t height;
+    std::uint32_t bytesPerElement;
+    std::array<std::uint32_t, 3> block;
+    std::uint32_t blocksPerRow;
+};
+void RetireCoveredDepthSurfaces(VkDevice device, std::span<const std::pair<std::uint64_t, std::uint64_t>> written, std::span<const WrittenStorageExtent> extents);
 bool DepthSurfaceAt(std::uint64_t address);
 bool DepthSurfaceOverlaps(VkDevice device, std::uint64_t address, std::uint64_t bytes);
 bool DepthSurfaceAt(const Context& context, std::span<const std::uint32_t> words, const GuestTextureResource& resource);
@@ -41,9 +51,6 @@ std::optional<MemoryValueFill> MatchMemoryValueFill(std::span<const std::uint32_
 void NoteMemoryValueFill(const MemoryValueFill& fill);
 bool DepthSurfaceHolds(const Context& context, const GuestTextureResource& resource, const Texture* texture);
 void NoteDepthMetadataFill(std::uint64_t address, std::size_t bytes, std::uint32_t pattern);
-#if defined(__APPLE__)
-bool FillCoversDepthMetadata(std::uint64_t address, std::size_t bytes);
-#endif
 VkImageAspectFlags HtileFillClears(std::uint32_t pattern, bool stencilInHtile);
 std::uint64_t HtileMetadataBytes(VkExtent2D extent);
 bool HtileFillCovers(std::uint64_t htile, VkExtent2D extent, std::uint64_t address, std::size_t bytes);

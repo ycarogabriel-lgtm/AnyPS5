@@ -111,6 +111,22 @@ struct SpirvEmitterState {
     bool fragmentDescriptorSet = false;
     bool float16DenormPreserve = false;
     bool robustBufferAccess2 = false;
+    bool float32FlushToZero = false;
+    bool fusedExactArithmetic = false;
+    bool meshBarycentricPixel = false;
+    bool meshBarycentricVertex = false;
+    std::uint32_t barycentricSmoothLocation = 0xffffffffu;
+    std::uint32_t barycentricLinearLocation = 0xffffffffu;
+    std::uint32_t barycentricPositionsLocation = 0xffffffffu;
+    std::vector<std::uint32_t> meshExportedLocations;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> meshPerVertexLocations;
+    std::vector<std::array<std::uint32_t, 3>> meshVertexParameters;
+    std::uint32_t meshPositionStaging = 0;
+    std::uint32_t meshClipSmooth = 0;
+    std::uint32_t meshClipLinear = 0;
+    std::uint32_t meshFlatPositions = 0;
+    std::uint32_t pixelFlatPositions = 0;
+    std::map<std::pair<std::uint32_t, std::uint32_t>, std::uint32_t> solvedBarycentrics;
     std::unordered_set<const IrValue*> sharedLaneValues;
     std::uint32_t laneHalf = 0;
     std::uint32_t spirvVersion = 0x00010300u;
@@ -163,6 +179,7 @@ struct SpirvEmitterState {
     // Execution scope of the barriers that keep one guest wave's LDS accesses in program order across
     // host invocations (see WaveLdsScope); 0 when none are emitted.
     std::uint32_t waveLdsScope = 0;
+    bool insideLdsLock = false;
     // Debug aid (APS5_LOOP_GUARD=<exits>): after that many evaluated loop exits an invocation leaves its
     // loops, and the first loop that ran out is reported as a LoopLimit fault instead of hanging the GPU.
     std::uint32_t loopGuardLimit = 0;
@@ -192,6 +209,9 @@ struct SpirvEmitterState {
     std::uint32_t tableMapVariable = 0;
     std::uint32_t mainFunc = 0;
     std::uint32_t meshGuestFunc = 0;
+    std::uint32_t pixelGuestFunc = 0;
+    std::uint32_t pixelStopFlag = 0;
+    bool pixelStopStored = false;
     std::uint32_t meshAllocation = 0;
     std::uint32_t meshPrimitiveData = 0;
     std::uint32_t meshPrimitives = 0;
@@ -202,6 +222,7 @@ struct SpirvEmitterState {
     std::uint32_t pixelValidMaskVariable = 0;
     std::uint32_t quadPixelUncovered = 0;
     std::uint32_t sampleMaskInputVariable = 0;
+    std::uint32_t sampleMaskInputCopy = 0;
     std::uint32_t ownSampleIdVariable = 0;
     std::uint32_t quadSampleCoverage = 0;
     std::uint32_t subgroupLocalInvocationIdVariable = 0;
@@ -216,6 +237,7 @@ struct SpirvEmitterState {
     std::uint32_t depthVariable = 0;
     std::uint32_t sampleMaskVariable = 0;
     std::uint32_t stencilRefVariable = 0;
+    std::uint32_t stencilRefOutput = 0;
     bool stencilReplay = false;
     std::vector<SpirvInputBinding> inputs;
     std::vector<SpirvOutputBinding> outputs;

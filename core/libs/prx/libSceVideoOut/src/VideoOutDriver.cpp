@@ -279,7 +279,8 @@ VideoOutDriver::VideoOutDriver() {
     OnMainThread([] {
         SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
 #ifdef _WIN32
-        SDL_SetHintWithPriority(SDL_HINT_DIRECTINPUT_ENABLED, "0", SDL_HINT_DEFAULT);
+    SDL_SetHintWithPriority(SDL_HINT_DIRECTINPUT_ENABLED, "0", SDL_HINT_DEFAULT);
+    if (std::getenv("APS5_NO_WGI") != nullptr) SDL_SetHintWithPriority(SDL_HINT_JOYSTICK_WGI, "0", SDL_HINT_DEFAULT);
 #endif
 #ifdef __linux__
         SDL_SetHint(SDL_HINT_VIDEODRIVER, "wayland,x11");
@@ -689,14 +690,14 @@ void VideoOutDriver::presentLoop(std::stop_token token, std::promise<void>& star
                         imeTextInput->HandleEvent(event, SDL_GetWindowID(window.Handle()));
                     }
                 }
-                padInput->Update();
-                updateDisplayRefreshRate();
                 return false;
             });
             if (quit) {
                 LibcRequestExit_nid_postfix(0);
                 throw ProcessShutdown{};
             }
+            padInput->Update(window);
+            updateDisplayRefreshRate();
             pollHostHdr();
             OnMainThread([&] { mouseInput->UpdateCapture(!padInput->MouseModeEnabled()); });
             if (current) {

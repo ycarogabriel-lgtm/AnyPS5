@@ -36,11 +36,11 @@ int APS5_VABI sceNetCtlCheckCallback(void);
 int APS5_VABI sceNetCtlGetInfo(int, NetCtlInfo*);
 int APS5_VABI sceNetCtlGetNatInfo(NetCtlNatInfo*);
 int APS5_VABI sceNetCtlGetState(int*);
+int APS5_VABI sceNetCtlGetStateV6(int*);
+int APS5_VABI sceNetCtlGetResult(int, int*);
 #ifdef __APPLE__
 std::size_t NetCtlDefaultRoutes_nid_no_patch(const char*, std::size_t, NetCtlDefaultRoute*, std::size_t);
 #endif
-int APS5_VABI sceNetCtlGetStateV6(int*);
-int APS5_VABI sceNetCtlGetResult(int, int*);
 int APS5_VABI sceNetCtlRegisterCallback(NetCtlCallback, void*, int*);
 int APS5_VABI sceNetCtlRegisterCallbackV6(NetCtlCallback, void*, int*);
 void APS5_VABI sceNetCtlTerm(void);
@@ -306,19 +306,13 @@ int main() {
     QueryAddress(17);
     QueryAddress(18);
 
-    for (const int code : {12, 13, 20}) {
+    for (const int code : {5, 6, 12, 13, 20}) {
         std::memset(&info, 0x5a, sizeof(info));
         Require(sceNetCtlGetInfo(code, &info) == 0 && info.opaque[0] == 0);
     }
 
-    for (const int code : {5, 6, 7, 8, 9, 10}) {
-        bool threw = false;
-        try {
-            sceNetCtlGetInfo(code, &info);
-        } catch (const std::runtime_error&) {
-            threw = true;
-        }
-        Require(threw);
+    for (const int code : {7, 8, 9, 10}) {
+        Require(QueryWord(code) == 0);
     }
 
     Require(sceNetCtlGetNatInfo(nullptr) == kErrInvalidAddr);

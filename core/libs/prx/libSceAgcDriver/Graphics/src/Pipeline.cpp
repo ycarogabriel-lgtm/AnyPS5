@@ -10,6 +10,7 @@
 #include "prx/libc/include/HostThreadLocal.hpp"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -138,6 +139,13 @@ void ValidateProvokingVertex(const Context& context, const State& state, std::sp
         }
         return;
     }
+    if (BarycentricPatches(state, shaders)) {
+        for (const auto& shader : shaders) {
+            if (shader.stage != ShaderRecompiler::ShaderStage::Fragment || shader.program == nullptr) continue;
+            Require(std::none_of(shader.program->fragmentParameters.begin(), shader.program->fragmentParameters.end(), [](const ShaderRecompiler::FragmentParameter& parameter) { return parameter.flat && parameter.perVertex; }), "last provoking vertex with explicit per-vertex flat interpolation is unsupported");
+        }
+        return;
+    }
     const auto readsProvokingVertex = [](const ShaderRecompiler::RecompileResult& program) {
         if (std::any_of(program.fragmentParameters.begin(), program.fragmentParameters.end(), [](const ShaderRecompiler::FragmentParameter& parameter) {
             return parameter.flat || parameter.perVertex || parameter.custom || parameter.flatP10;
@@ -185,7 +193,7 @@ void ValidateProvokingVertex(const Context& context, const State& state, std::sp
     if (!context.provokingVertexLast && !observed) return;
     Require(context.provokingVertexLast, "last provoking vertex requires VK_EXT_provoking_vertex with provokingVertexLast enabled");
     const bool meshPrimitives = state.stages.path == ShaderPath::Geometry && state.stages.mesh;
-    Require(!BarycentricPatches(state, shaders) && !state.stages.tessellation && (meshPrimitives || (state.stages.path == ShaderPath::Vertex && !state.stages.mesh)), "last provoking vertex is unsupported for generated primitive pipelines");
+    Require(!state.stages.tessellation && (meshPrimitives || (state.stages.path == ShaderPath::Vertex && !state.stages.mesh)), "last provoking vertex is unsupported for generated primitive pipelines");
     Require(!meshPrimitives || (state.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP && state.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN), "last provoking vertex is unsupported for triangle strips or fans assembled for a geometry program");
     Require(state.rectList || state.topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST || state.topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || state.topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP || state.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST || state.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP || state.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, "last provoking vertex is unsupported for this primitive topology");
     for (const auto& shader : shaders) {
@@ -199,7 +207,6 @@ void ValidateProvokingVertex(const Context& context, const State& state, std::sp
 bool ValidateSampleLocations(const Context& context, const State& state) {
     const bool extensionSupportsSamples = (context.sampleLocationSampleCounts & state.samples) != 0;
     Require(!state.customSampleLocations || extensionSupportsSamples, "custom sample locations require VK_EXT_sample_locations support for the draw's sample count");
-    Require(!state.sampleLocationGrid || (context.sampleLocationGridSampleCounts & state.samples) != 0, "sample locations varying between pixels require a 2x2 sample location grid for the draw's sample count");
     const bool enabled = extensionSupportsSamples && (state.samples > 1 || state.customSampleLocations) && (!state.depth || SampleLocationsCompatibleDepth(context, HostDepthFormat(context, state.depth->format), state.depth->samples));
     Require(!state.customSampleLocations || enabled, "custom sample locations require a compatible depth format and sample count");
     return enabled;
@@ -207,8 +214,7 @@ bool ValidateSampleLocations(const Context& context, const State& state) {
 
 void ValidateViewport(const Context& context, const VkViewport& viewport) {
     Require(std::isfinite(viewport.minDepth) && std::isfinite(viewport.maxDepth), "non-finite viewport depth range");
-    if (ClampsDepthRange(context) && (viewport.minDepth < 0 || viewport.minDepth > 1 || viewport.maxDepth < 0 || viewport.maxDepth > 1)) ReportClampedDepth("viewport depth", viewport.minDepth, viewport.maxDepth);
-    Require(context.depthRangeUnrestricted || ClampsDepthRange(context) || (viewport.minDepth >= 0 && viewport.minDepth <= 1 && viewport.maxDepth >= 0 && viewport.maxDepth <= 1), "viewport depth outside [0, 1] requires VK_EXT_depth_range_unrestricted");
+    Require(context.depthRangeUnrestricted || (viewport.minDepth >= 0 && viewport.minDepth <= 1 && viewport.maxDepth >= 0 && viewport.maxDepth <= 1), "viewport depth outside [0, 1] requires VK_EXT_depth_range_unrestricted");
     Require(std::isfinite(viewport.x) && std::isfinite(viewport.y) && std::isfinite(viewport.width) && std::isfinite(viewport.height), "viewport arithmetic overflow");
     Require(viewport.width <= context.limits.maxViewportDimensions[0] && std::abs(viewport.height) <= context.limits.maxViewportDimensions[1], "viewport dimensions exceed device limits");
     Require(viewport.x >= context.limits.viewportBoundsRange[0] && viewport.x + viewport.width <= context.limits.viewportBoundsRange[1], "viewport X exceeds device bounds");
@@ -264,6 +270,13 @@ VkShaderStageFlags pushStagesOf(const Context& context) {
     return PreRasterizationPushStages(context.meshShader, context.tessellationShader, context.geometryShader);
 }
 
+VkExtent2D hostSampleLocationGrid(const Context& context, const State& state) {
+    if (!state.sampleLocationGrid || (context.sampleLocationGridSampleCounts & state.samples) != 0) return SampleLocationGrid(state);
+    static std::atomic<std::uint32_t> reported{0};
+    if ((reported.fetch_or(state.samples, std::memory_order_relaxed) & state.samples) == 0) std::fprintf(stderr, "[gpu] no 2x2 sample location grid at sample count %u on this device: sample locations varying between pixels take pixel (0,0)'s in every pixel\n", state.samples);
+    return {1, 1};
+}
+
 template<typename TValue>
 void appendKey(std::vector<std::byte>& key, const TValue& value) {
     static_assert(std::is_trivially_copyable_v<TValue>);
@@ -290,6 +303,11 @@ bool libraryKeys(PipelineLibraryKeys& keys, const Context& context, const State&
                 sets |= 1u << binding.descriptorSet;
             }
         }
+    }
+    if (resources.split) {
+        const auto unused = 3u & ~(keys.preRasterizationSets | keys.fragmentSets);
+        keys.preRasterizationSets |= unused & 1u;
+        keys.fragmentSets |= unused & 2u;
     }
     for (const auto& binding : input.bindings) {
         appendKey(keys.vertexInput, binding.binding);
@@ -377,6 +395,7 @@ Pipeline::Pipeline(const Context& context, const State& state, const VertexInput
 Pipeline::Pipeline(const Context& context, const State& state, const VertexInputLayout& vertexInput, const PipelineSetLayouts& resources, std::span<const CompiledShader> shaders, VkImageLayout attachmentLayout) : context(context), _modules(shaders.size()), attachments(state.colors.size() + (state.depth ? 1u : 0u)), colorAttachments(state.colors.size()), depthBounds(state.depth.has_value() && state.depthBoundsTest), depthBias(state.depth.has_value() && state.depthBias), dynamicRendering(context.graphicsPipelineLibrary) {
     PerformanceTimer timing("Vulkan.GraphicsPipeline");
     sampleLocationsEnabled = ValidateSampleLocations(context, state);
+    sampleLocationGrid = hostSampleLocationGrid(context, state);
     // A cached pipeline may outlive its device's teardown (see ClearCachedPipelines); it must not keep
     // the buffer pool, which is reset with the device, alive past it.
     this->context.bufferPool.reset();
@@ -561,7 +580,7 @@ Pipeline::Pipeline(const Context& context, const State& state, const VertexInput
         const auto locations = SampleLocations(state);
         VkPipelineSampleLocationsStateCreateInfoEXT sampleLocations{VK_STRUCTURE_TYPE_PIPELINE_SAMPLE_LOCATIONS_STATE_CREATE_INFO_EXT};
         sampleLocations.sampleLocationsEnable = VK_TRUE;
-        const auto grid = SampleLocationGrid(state);
+        const auto grid = sampleLocationGrid;
         sampleLocations.sampleLocationsInfo = {VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT, nullptr, samples.rasterizationSamples, grid, state.samples * grid.width * grid.height, locations.data()};
         if (sampleLocationsEnabled) samples.pNext = &sampleLocations;
         VkPipelineCoverageReductionStateCreateInfoNV coverageReduction{VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_REDUCTION_STATE_CREATE_INFO_NV};
@@ -801,7 +820,7 @@ void Pipeline::Begin(VkCommandBuffer commands, const Framebuffer& framebuffer, V
     begin.framebuffer = framebuffer.Handle();
     begin.renderArea = {{0, 0}, extent};
     const auto locations = SampleLocations(state);
-    const auto grid = SampleLocationGrid(state);
+    const auto grid = sampleLocationGrid;
     const VkSampleLocationsInfoEXT info{VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT, nullptr, static_cast<VkSampleCountFlagBits>(state.samples), grid, state.samples * grid.width * grid.height, locations.data()};
     const VkAttachmentSampleLocationsEXT initial{static_cast<std::uint32_t>(state.colors.size()), info};
     const VkSubpassSampleLocationsEXT post{0, info};

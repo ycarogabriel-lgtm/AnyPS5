@@ -4,6 +4,7 @@
 #include "prx/libSceAgcDriver/Graphics/include/Resources.hpp"
 #include "VulkanTestDevice.hpp"
 #include "../AllocationFailure.hpp"
+#include "../SlabReturn.hpp"
 #include <SDL_loadso.h>
 #include <array>
 #include <cstdint>
@@ -142,6 +143,8 @@ public:
     Device() {
 #ifdef _WIN32
         library = SDL_LoadObject("vulkan-1.dll");
+#elif defined(__APPLE__)
+        library = SDL_LoadObject("libvulkan.1.dylib");
 #else
         library = SDL_LoadObject("libvulkan.so.1");
 #endif
@@ -153,6 +156,12 @@ public:
             application.apiVersion = VK_API_VERSION_1_1;
             VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
             info.pApplicationInfo = &application;
+#ifdef __APPLE__
+            const char* portability = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
+            info.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            info.enabledExtensionCount = 1;
+            info.ppEnabledExtensionNames = &portability;
+#endif
             Check(function<PFN_vkCreateInstance>("vkCreateInstance")(&info, nullptr, &instance), "vkCreateInstance");
             std::uint32_t count = 0;
             const auto enumerate = function<PFN_vkEnumeratePhysicalDevices>("vkEnumeratePhysicalDevices");
@@ -198,6 +207,11 @@ public:
             device.queueCreateInfoCount = 1;
             device.pQueueCreateInfos = &queue;
             device.pEnabledFeatures = &features;
+#ifdef __APPLE__
+            const char* portabilitySubset = "VK_KHR_portability_subset";
+            device.enabledExtensionCount = 1;
+            device.ppEnabledExtensionNames = &portabilitySubset;
+#endif
             Check(function<PFN_vkCreateDevice>("vkCreateDevice")(context.physical, &device, nullptr, &context.device), "vkCreateDevice");
             RealDeviceProc = function<PFN_vkGetDeviceProcAddr>("vkGetDeviceProcAddr");
             RealCreateBuffer = reinterpret_cast<PFN_vkCreateBuffer>(RealDeviceProc(context.device, "vkCreateBuffer"));
@@ -543,7 +557,7 @@ void ExactSizes(const Context& context) {
 
 }
 
-int main() {
+int main(int argc, char** argv) {
     try {
         std::unique_ptr<Device> device;
         try {
@@ -553,7 +567,27 @@ int main() {
             std::printf("skipped, no usable Vulkan device: %s\n", error.what());
             return VulkanTestSkipped;
         }
-        SlabMetadataFailures(device->GetContext());
+        const auto& context = device->GetContext();
+        const bool onlyReturns = argc == 2;
+        const bool hostOnly = onlyReturns && std::strcmp(argv[1], "--slab-return-host") == 0;
+        Require(!onlyReturns || hostOnly || std::strcmp(argv[1], "--slab-return-device") == 0, "unknown slab return test mode");
+        bool host = false;
+        bool local = false;
+        for (std::uint32_t type = 0; type < context.memory.memoryTypeCount; ++type) {
+            const auto flags = context.memory.memoryTypes[type].propertyFlags;
+            const bool isHost = (flags & HostMemory) == HostMemory;
+            const bool isLocal = (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0 && (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0;
+            if ((!host && isHost && (!onlyReturns || hostOnly)) || (!local && isLocal && (!onlyReturns || !hostOnly))) {
+                const auto before = LiveBytes;
+                AgcDriver::Tests::SlabReturnWithoutAllocation(context, type);
+                Require(LiveBytes == before && AllocationErrors == 0, "slab returns leaked or invalidly freed native Vulkan memory");
+                host |= isHost;
+                local |= isLocal;
+            }
+        }
+        Require(onlyReturns ? (hostOnly ? host : local) : host, "no requested memory type for the slab return test");
+        if (onlyReturns) return 0;
+        SlabMetadataFailures(context);
         RobustReadPastEnd(device->GetContext());
         DeviceBindingFailures(device->GetContext());
         ExactSizes(device->GetContext());

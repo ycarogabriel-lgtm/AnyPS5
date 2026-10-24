@@ -58,6 +58,12 @@ struct ThreadArgs {
 #endif
 };
 
+#ifdef __APPLE__
+static void KeepHostFaultSignalsUnblocked(sigset_t& mask) {
+    for (const int signal : {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP}) sigdelset(&mask, signal);
+}
+#endif
+
 static std::atomic<thread_dtors_func_t> threadDtors{nullptr};
 static std::atomic<get_thread_atexit_count_func_t> threadAtexitCount{nullptr};
 static std::atomic<thread_atexit_report_func_t> threadAtexitReport{nullptr};
@@ -262,7 +268,8 @@ static void RegisterStack(PthreadPrivate* self) {
 static void RestoreStackPages(std::uintptr_t start, std::size_t bytes) noexcept {
 #ifdef _WIN32
     DWORD previous = 0;
-    const bool restored = VirtualProtect(reinterpret_cast<void*>(start), bytes, PAGE_READWRITE, &previous) != 0;
+    const bool restored = VirtualAlloc(reinterpret_cast<void*>(start), bytes, MEM_COMMIT, PAGE_READWRITE) != nullptr &&
+        VirtualProtect(reinterpret_cast<void*>(start), bytes, PAGE_READWRITE, &previous) != 0;
 #else
     const bool restored = ::mprotect(reinterpret_cast<void*>(start), bytes, PROT_READ | PROT_WRITE) == 0;
 #endif
@@ -270,13 +277,57 @@ static void RestoreStackPages(std::uintptr_t start, std::size_t bytes) noexcept 
     GuestAllocations::GuestAllocationsInvalidate_nid_postfix(start, bytes);
 }
 
+static void ReplaceStackProtection(std::map<std::uintptr_t, std::size_t>& ranges, std::uintptr_t start, std::size_t bytes, bool readWrite) {
+    const auto end = start + bytes;
+    auto it = ranges.upper_bound(start);
+    if (it != ranges.begin() && std::prev(it)->first + std::prev(it)->second > start) --it;
+    while (it != ranges.end() && it->first < end) {
+        const auto previousStart = it->first;
+        const auto previousEnd = previousStart + it->second;
+        it = ranges.erase(it);
+        if (previousStart < start) ranges.emplace(previousStart, start - previousStart);
+        if (previousEnd > end) {
+            ranges.emplace(end, previousEnd - end);
+            break;
+        }
+    }
+    if (!readWrite) ranges[start] = bytes;
+}
+
 void NoteGuestStackProtection(std::uintptr_t start, std::size_t bytes, bool readWrite) {
     std::lock_guard lock(stackLock);
-    auto it = protectedStackPages.upper_bound(start);
-    if (it != protectedStackPages.begin() && std::prev(it)->first + std::prev(it)->second > start) --it;
-    while (it != protectedStackPages.end() && it->first < start + bytes) it = protectedStackPages.erase(it);
-    if (!readWrite) protectedStackPages[start] = bytes;
+    auto replacement = protectedStackPages;
+    ReplaceStackProtection(replacement, start, bytes, readWrite);
+    protectedStackPages.swap(replacement);
 }
+
+#ifdef _WIN32
+bool ReplaceGuestThreadStack(std::uintptr_t start, std::size_t bytes, bool readWrite, const std::function<bool()>& replace) {
+    if (bytes == 0 || bytes > std::numeric_limits<std::uintptr_t>::max() - start) return false;
+    std::uintptr_t low = 0;
+    std::uintptr_t high = 0;
+    const bool current = CurrentStack(&low, &high) && start >= low && start + bytes <= high;
+    constexpr std::uintptr_t HostFrameReserve = 64 * 1024;
+    const auto frame = reinterpret_cast<std::uintptr_t>(&low);
+    if (current && (frame < HostFrameReserve || start + bytes > frame - HostFrameReserve)) return false;
+    std::lock_guard lock(stackLock);
+    if (!current && std::none_of(liveStacks.begin(), liveStacks.end(), [&](const auto& entry) {
+            return start >= entry.second.first && start + bytes <= entry.second.second;
+        })) return false;
+    auto replacement = protectedStackPages;
+    ReplaceStackProtection(replacement, start, bytes, readWrite);
+    auto failure = protectedStackPages;
+    ReplaceStackProtection(failure, start, bytes, false);
+    try {
+        if (!replace()) return false;
+    } catch (...) {
+        protectedStackPages.swap(failure);
+        throw;
+    }
+    protectedStackPages.swap(replacement);
+    return true;
+}
+#endif
 
 static void UnregisterStack(PthreadPrivate* self) {
     std::lock_guard lock(stackLock);
@@ -410,14 +461,17 @@ KernelCpumask LiveGuestThreadsAffinity() {
     return mask;
 }
 
-bool GuestThreadIsLive(const PthreadPrivate* thread) {
+std::unique_lock<std::mutex> LockLiveGuestThread(const PthreadPrivate* thread) {
     auto& registry = CpuClocks();
-    std::lock_guard lock(registry.lock);
+    std::unique_lock lock(registry.lock);
     for (const auto& [id, live] : registry.threads) {
-        if (live != thread) continue;
-        return !live->_finished.load(std::memory_order_acquire);
+        if (live == thread && !live->_finished.load(std::memory_order_acquire)) return lock;
     }
-    return false;
+    return {};
+}
+
+bool GuestThreadIsLive(const PthreadPrivate* thread) {
+    return LockLiveGuestThread(thread).owns_lock();
 }
 
 bool GetLiveGuestThreadAffinity_nid_no_patch(std::int64_t tid, KernelCpumask& mask) {
@@ -639,7 +693,13 @@ static void RunThread(std::unique_ptr<ThreadArgs> args) {
 #endif
     args.reset();
 #ifndef _WIN32
+#ifdef __APPLE__
+    sigset_t hostMask = signalMask;
+    KeepHostFaultSignalsUnblocked(hostMask);
+    pthread_sigmask(SIG_SETMASK, &hostMask, nullptr);
+#else
     pthread_sigmask(SIG_SETMASK, &signalMask, nullptr);
+#endif
 #endif
     finishThread(self, Aps5CallGuestEntry_nid_no_patch(entry, arg));
     CurrentGuestState().current = nullptr;
@@ -870,6 +930,9 @@ int APS5_VABI scePthreadCreate(Pthread* thread, const PthreadAttr* attr, Pthread
     if (created == 0) {
         sigset_t allSignals;
         sigfillset(&allSignals);
+#ifdef __APPLE__
+        KeepHostFaultSignalsUnblocked(allSignals);
+#endif
         pthread_sigmask(SIG_BLOCK, &allSignals, nullptr);
         created = pthread_create(&p->hostThread, &nativeAttr, StartNativeThread, native.get());
         pthread_sigmask(SIG_SETMASK, &creatorMask, nullptr);

@@ -44,6 +44,8 @@ public:
     Device() {
 #ifdef _WIN32
         library = SDL_LoadObject("vulkan-1.dll");
+#elif defined(__APPLE__)
+        library = SDL_LoadObject("libvulkan.1.dylib");
 #else
         library = SDL_LoadObject("libvulkan.so.1");
 #endif
@@ -55,6 +57,12 @@ public:
             app.apiVersion = VK_API_VERSION_1_1;
             VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
             info.pApplicationInfo = &app;
+#ifdef __APPLE__
+            const char* portability = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
+            info.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+            info.enabledExtensionCount = 1;
+            info.ppEnabledExtensionNames = &portability;
+#endif
             Check(function<PFN_vkCreateInstance>("vkCreateInstance")(&info, nullptr, &instance), "vkCreateInstance");
             std::uint32_t count = 0u;
             const auto enumerate = function<PFN_vkEnumeratePhysicalDevices>("vkEnumeratePhysicalDevices");
@@ -97,6 +105,11 @@ public:
             device.queueCreateInfoCount = 1u;
             device.pQueueCreateInfos = &queue;
             device.pEnabledFeatures = &enabled;
+#ifdef __APPLE__
+            const char* portabilitySubset = "VK_KHR_portability_subset";
+            device.enabledExtensionCount = 1;
+            device.ppEnabledExtensionNames = &portabilitySubset;
+#endif
             Check(function<PFN_vkCreateDevice>("vkCreateDevice")(context.physical, &device, nullptr, &context.device), "vkCreateDevice");
             context.deviceProc = function<PFN_vkGetDeviceProcAddr>("vkGetDeviceProcAddr");
             context.formatProperties = function<PFN_vkGetPhysicalDeviceFormatProperties>("vkGetPhysicalDeviceFormatProperties");
@@ -534,7 +547,7 @@ std::array<std::uint32_t, 8> DepthSampleWords(const DepthTarget& target) {
     const auto format = target.format == VK_FORMAT_D16_UNORM ? 7u : 22u;
     const auto count = static_cast<std::uint32_t>(std::countr_zero(target.samples));
     const auto width = target.extent.width - 1u, height = target.extent.height - 1u;
-    return {static_cast<std::uint32_t>(base), static_cast<std::uint32_t>((base >> 32u) & 255u) | (format << 20u) | ((width & 3u) << 30u), (width >> 2u) | (height << 14u), (14u << 28u) | (24u << 20u) | (count << 16u) | 0x204u, 0u, count << 4u, (1u << 10u) | (1u << 19u) | (1u << 21u) | (static_cast<std::uint32_t>(metadata & 255u) << 24u), static_cast<std::uint32_t>(metadata >> 8u)};
+    return {static_cast<std::uint32_t>(base), static_cast<std::uint32_t>((base >> 32u) & 255u) | (format << 20u) | ((width & 3u) << 30u), (width >> 2u) | (height << 14u), (14u << 28u) | (24u << 20u) | (count << 16u) | 0x204u, 0u, count << 4u, (target.iterate256 ? 1u << 10u : 0u) | (1u << 19u) | (1u << 21u) | (static_cast<std::uint32_t>(metadata & 255u) << 24u), static_cast<std::uint32_t>(metadata >> 8u)};
 }
 
 bool DepthSupported(const Context& context, VkFormat format, std::uint32_t fragments) {
@@ -649,7 +662,7 @@ void CheckClearDispatch() {
     }
 }
 
-void CheckDepthTarget(Context context, VkFormat format, std::uint32_t fragments, bool one, bool clearing = false, std::optional<bool> depthOnlyOverride = std::nullopt, ClearFault fault = ClearFault::None) {
+void CheckDepthTarget(Context context, VkFormat format, std::uint32_t fragments, bool one, bool clearing = false, std::optional<bool> depthOnlyOverride = std::nullopt, ClearFault fault = ClearFault::None, bool iterate256 = true) {
     const VkExtent2D extent{5u, 3u};
     const auto bytes = static_cast<std::size_t>(MultisampledDepthBytes_nid_no_patch(extent, format == VK_FORMAT_D16_UNORM ? 2u : 4u, fragments));
     TargetMemory memory(bytes), metadata(65536u);
@@ -661,7 +674,10 @@ void CheckDepthTarget(Context context, VkFormat format, std::uint32_t fragments,
     target.depthSwizzle = 24u;
     target.pipeBankXor = one ? 0x8c00u : 0u;
     target.htileDepthOnly = depthOnly;
-    target.iterate256 = target.htilePipeAligned = true;
+    target.iterate256 = iterate256;
+    target.htilePipeAligned = true;
+    TargetMemory otherMemory(static_cast<std::size_t>(DepthSliceBytes(extent, 4u)));
+    DepthTarget otherTarget{otherMemory.Address(), 0u, extent, VK_FORMAT_D32_SFLOAT, 0.0f, 0u, 0u, false, 1u};
     Recorder recorder(context);
     recorder.Activate();
     struct Cleanup {
@@ -733,10 +749,18 @@ void CheckDepthTarget(Context context, VkFormat format, std::uint32_t fragments,
     {
         const DepthRaster raster(context, target, view);
         for (const auto offset : {0.0f, 0.25f}) {
+            Require(DepthSurfaceView(context, target) == view, "rebinding the native depth attachment replaced its image");
             Require(CachedSampledTexture(context, words) == texture && CachedSampledTexture(context, words, VK_IMAGE_VIEW_TYPE_2D_ARRAY) == arrayTexture, "native sampled view changed between raster writes");
             std::memset(output.Bytes().data(), 0xa5, output.Bytes().size());
+            {
+                CommandBatch batch(context);
+                raster.Run(batch.Handle(), offset);
+                batch.SubmitAndWait();
+            }
+            if (offset == 0.0f) DepthSurfaceView(context, otherTarget);
+            Require(CachedSampledTexture(context, words) == texture, "native depth shadow view changed after a raster write");
+            recorder.Sync();
             CommandBatch batch(context);
-            raster.Run(batch.Handle(), offset);
             fetch.Run(batch.Handle(), count);
             RecordMemoryBarrier(context, batch.Handle(), VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT);
             batch.SubmitAndWait();
@@ -814,7 +838,7 @@ void CheckDepthTarget(Context context, VkFormat format, std::uint32_t fragments,
             case 8u: changed.pipeBankXor ^= 0x100u; break;
             case 9u: changed.dccAddress += 256u; break;
             case 10u: changed.dccPipeAligned = false; break;
-            case 11u: changed.iterate256 = false; break;
+            case 11u: changed.iterate256 = !changed.iterate256; break;
             case 12u: changed.allocatedMipCount = 2u; break;
             case 13u: changed.mipCount = 2u; break;
             case 14u: changed.baseLevel = 1u; break;
@@ -829,7 +853,7 @@ void CheckDepthTarget(Context context, VkFormat format, std::uint32_t fragments,
     TargetRefuses([&] { DepthSurfaceHolds(context, resource, texture.get()); }, "guest writes");
     texture.reset();
     arrayTexture.reset();
-    std::printf("Native depth format=%u samples=%u clear=%u: imported, rasterized twice, sampled and refused conflicts\n", static_cast<std::uint32_t>(format), fragments, one);
+    std::printf("Native depth format=%u samples=%u clear=%u iterate256=%u: imported, rasterized twice, sampled and refused conflicts\n", static_cast<std::uint32_t>(format), fragments, one, iterate256);
 }
 
 void CheckHtileRouting(Context context, VkFormat format, std::uint32_t fragments) {
@@ -895,7 +919,7 @@ void CheckEligibility(Context context) {
             case 2u: invalid.lastSlice = 1u; reason = "arrays"; break;
             case 3u: invalid.pipeBankXor = 0x10u; reason = "XOR"; break;
             case 4u: invalid.htileAddress = 0u; reason = "HTILE"; break;
-            case 5u: invalid.iterate256 = false; reason = "HTILE"; break;
+            case 5u: invalid.htileAddress += 16u; reason = "HTILE"; break;
             case 6u: invalid.htilePipeAligned = false; reason = "HTILE"; break;
             case 7u: invalid.htileVrsEncoding = 1u; reason = "VRS"; break;
             case 8u: invalid.clearDepth = 0.5f; reason = "clear value"; break;
@@ -1163,8 +1187,10 @@ int main(int argc, char** argv) {
         std::uint32_t checked = 0u, unavailable = 0u;
         for (const auto format : {VK_FORMAT_D16_UNORM, VK_FORMAT_D32_SFLOAT}) {
             for (const auto samples : {2u, 4u, 8u}) {
-                if (!DepthSupported(context, format, samples)) { unavailable += 2u; continue; }
-                for (const bool one : {false, true}) { CheckDepthTarget(context, format, samples, one); ++checked; }
+                if (!DepthSupported(context, format, samples)) { unavailable += 4u; continue; }
+                for (const bool one : {false, true}) {
+                    for (const bool iterate256 : {true, false}) { CheckDepthTarget(context, format, samples, one, false, std::nullopt, ClearFault::None, iterate256); ++checked; }
+                }
                 CheckHtileRouting(context, format, samples);
             }
         }

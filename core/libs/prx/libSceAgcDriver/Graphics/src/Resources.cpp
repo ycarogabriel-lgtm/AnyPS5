@@ -4,6 +4,7 @@
 #include "prx/libSceAgcDriver/Execution/include/PerformanceTimer.hpp"
 #include "prx/libSceAgcDriver/Execution/include/GuestMemory.hpp"
 #include <algorithm>
+#include <cstring>
 #include <exception>
 
 namespace AgcDriver::Graphics {
@@ -63,6 +64,9 @@ Buffer::Buffer(const Context& context, std::size_t size, VkBufferUsageFlags usag
                 throw;
             }
         }
+#ifdef __APPLE__
+        if (mapping != nullptr && capacity > size) std::memset(static_cast<std::byte*>(mapping) + size, 0, capacity - size);
+#endif
         ready = true;
         return;
     }
@@ -92,6 +96,9 @@ Buffer::Buffer(const Context& context, std::size_t size, VkBufferUsageFlags usag
             Check(context.Function<PFN_vkBindBufferMemory>("vkBindBufferMemory")(context.device, buffer, memory, offset), "vkBindBufferMemory slab");
             initializeAddress(usage);
             mapping = slot.mapping;
+#ifdef __APPLE__
+            if (mapping != nullptr && capacity > size) std::memset(static_cast<std::byte*>(mapping) + size, 0, capacity - size);
+#endif
             ready = true;
             return;
         }
@@ -99,6 +106,9 @@ Buffer::Buffer(const Context& context, std::size_t size, VkBufferUsageFlags usag
         Check(context.Function<PFN_vkBindBufferMemory>("vkBindBufferMemory")(context.device, buffer, memory, 0), "vkBindBufferMemory");
         initializeAddress(usage);
         if ((properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) Check(context.Function<PFN_vkMapMemory>("vkMapMemory")(context.device, memory, 0, VK_WHOLE_SIZE, 0, &mapping), "vkMapMemory");
+#ifdef __APPLE__
+        if (mapping != nullptr && capacity > size) std::memset(static_cast<std::byte*>(mapping) + size, 0, capacity - size);
+#endif
         ready = true;
     } catch (...) {
         release();

@@ -24,6 +24,7 @@ Run it again after a change to the relinker. A change to the system libraries on
 ## Run
 
 - `<game directory>/run.sh`: plays the title. Background pipeline builds (`APS5_ASYNC_PIPELINES`) are on; `APS5_ASYNC_PIPELINES=0 ./run.sh` turns them off.
+- The launcher enables `MallocNanoZone=1` for small allocations under Rosetta. Set `MallocNanoZone=0` before running it to compare with the default allocator.
 - `<game directory>/run-profile.sh`: the same with `APS5_PROFILE_DRAW` and `APS5_PROFILE_GPU`, logged to `logs/profile-<date>.log`.
 - `python3 -I tools/macos/profile_summary.py <log> [--windows]`: frame rate and per-draw cost by scene weight, and the longest stalls.
 
