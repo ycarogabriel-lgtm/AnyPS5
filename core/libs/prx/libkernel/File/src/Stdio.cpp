@@ -582,18 +582,12 @@ static bool NativeIsPipe(int descriptor) {
 }
 #else
 #include <sys/vfs.h>
-#endif
 static bool NativeIsPipe(int descriptor) {
-#ifdef __APPLE__
-    struct stat file{};
-    return ::fstat(descriptor, &file) == 0 && S_ISFIFO(file.st_mode);
-#else
     constexpr long PipeFilesystem = 0x50495045;
     struct stat file{};
     struct statfs kind{};
     return ::fstat(descriptor, &file) == 0 && S_ISFIFO(file.st_mode) && ::fstatfs(descriptor, &kind) == 0
         && static_cast<long>(kind.f_type) == PipeFilesystem;
-#endif
 }
 #endif
 

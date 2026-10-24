@@ -16,13 +16,10 @@
 #include <windows.h>
 #elif defined(__APPLE__)
 #include <dlfcn.h>
-#else
-#include <dlfcn.h>
-#ifdef __APPLE__
 #include <mach-o/loader.h>
 #else
+#include <dlfcn.h>
 #include <link.h>
-#endif
 #endif
 
 #ifdef _WIN32

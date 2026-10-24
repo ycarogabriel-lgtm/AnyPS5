@@ -44,7 +44,7 @@ extern "C" void ForgetUnloadedUnwindImages_nid_no_patch();
 #endif
 
 namespace {
-thread_local std::array<char, 512> loaderError{};
+thread_local std::array<char, 2048> loaderError{};
 thread_local bool pendingError = false;
 void Error(const char* message) {
     std::snprintf(loaderError.data(), loaderError.size(), "%s", message);
@@ -82,9 +82,6 @@ struct Module {
 #endif
 #ifdef _WIN32
     std::uintptr_t globalOrder = 0;
-#endif
-#ifdef __APPLE__
-    const void* image = nullptr;
 #endif
     ~Module() {
         if (owned && native) {
