@@ -185,7 +185,6 @@ int FindImage(dl_phdr_info* image, std::size_t, void* data) {
     return 1;
 }
 
-#ifndef __APPLE__
 int CollectGuestImage(dl_phdr_info* image, std::size_t, void* data) {
     const std::string_view name = image->dlpi_name ? image->dlpi_name : "";
     if (!name.empty() && !name.ends_with(".prx")) return 0;
@@ -217,7 +216,6 @@ std::vector<GuestImage> GuestImages() {
     }
     return images;
 }
-#endif
 
 int AddGuestSegmentBytes(dl_phdr_info* image, std::size_t, void* data) {
     const std::string_view name = image->dlpi_name ? image->dlpi_name : "";
@@ -393,8 +391,8 @@ bool SystemImage(const GuestImage& image) {
 }
 #endif
 
-#ifndef __APPLE__
-int FillModuleInfo(KernelModule handle, ModuleInfo* info, bool titleOnly) {
+template<typename TInfo>
+int FillModuleInfo(KernelModule handle, TInfo* info, bool titleOnly) {
     if (!info) return SCE_KERNEL_ERROR_EFAULT;
     if (info->st_size != sizeof(TInfo)) return SCE_KERNEL_ERROR_EINVAL;
     for (const auto& image : GuestImages()) {
@@ -425,7 +423,6 @@ int FillModuleList(KernelModule* handles, std::size_t count, std::size_t* actual
     *actual = images.size();
     return 0;
 }
-#endif
 
 }
 
@@ -467,14 +464,24 @@ int APS5_VABI sceKernelGetModuleInfoFromAddr(std::uint64_t address, int flags, M
 }
 
 #ifdef __APPLE__
-int APS5_VABI sceKernelGetModuleList(KernelModule*, std::size_t, std::size_t*) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
+int APS5_VABI sceKernelGetModuleList(KernelModule* handles, std::size_t count, std::size_t* actual) {
+    return FillModuleList(handles, count, actual, false);
 }
 
-int APS5_VABI sceKernelGetModuleInfo(KernelModule, ModuleInfo*) {
-    NotImplemented_nid_no_patch(__func__);
-    return 0;
+int APS5_VABI sceKernelGetModuleList2(KernelModule* handles, std::size_t count, std::size_t* actual) {
+    return FillModuleList(handles, count, actual, true);
+}
+
+int APS5_VABI sceKernelGetModuleInfo(KernelModule handle, ModuleInfo* info) {
+    return FillModuleInfo(handle, info, false);
+}
+
+int APS5_VABI sceKernelGetModuleInfo2(KernelModule handle, ModuleInfo* info) {
+    return FillModuleInfo(handle, info, true);
+}
+
+int GetModuleInfoExByHandle_nid_no_patch(KernelModule handle, ModuleInfoEx* info) {
+    return FillModuleInfo(handle, info, false);
 }
 
 std::int32_t APS5_VABI sceKernelGetLibkernelTextLocation_nid_postfix(void** address, std::size_t* size) {

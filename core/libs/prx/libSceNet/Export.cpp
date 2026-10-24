@@ -1280,9 +1280,10 @@ int APS5_VABI sceNetConnect(int s, const void* addr, uint32_t addrlen) {
 #endif
     if (native.ss_family != (socket.family == NET_AF_INET ? AF_INET : AF_INET6)) return fail(NET_EAFNOSUPPORT);
 #ifdef __APPLE__
-    if (ConnectRetryingLoopbackReset_nid_no_patch(socket.native->value, reinterpret_cast<const sockaddr*>(&native), native_length, socket.type == NET_SOCK_STREAM && !socket.nonblock) == 0) {
+    if (ConnectRetryingLoopbackReset_nid_no_patch(socket.native->value, reinterpret_cast<const sockaddr*>(&native), native_length, socket.type == NET_SOCK_STREAM && !socket.native->nonblock) == 0) {
 #else
     if (::connect(socket.native->value, reinterpret_cast<const sockaddr*>(&native), native_length) == 0) {
+#endif
 #if defined(_WIN32) || defined(__APPLE__)
         note_local_address(s, socket);
 #endif
