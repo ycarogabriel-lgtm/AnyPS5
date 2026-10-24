@@ -1236,8 +1236,6 @@ VkFormat StorageFormatOrUndefined(const Context& context, VkFormat format) {
     const auto packed = PackedStorageViewFormat(format);
     if (packed != VK_FORMAT_UNDEFINED) {
         if (supports(packed)) storage = format;
-    } else if (supports(format)) {
-        storage = format;
     } else {
         VkFormat linear = VK_FORMAT_UNDEFINED;
         switch (format) {
@@ -1248,16 +1246,14 @@ VkFormat StorageFormatOrUndefined(const Context& context, VkFormat format) {
             case VK_FORMAT_R8G8_SRGB: linear = VK_FORMAT_R8G8_UNORM; break;
             default: break;
         }
-        if (linear != VK_FORMAT_UNDEFINED && supports(linear)) storage = linear;
-    }
-    VkFormat storage = VK_FORMAT_UNDEFINED;
 #ifdef __APPLE__
-    if (linear != VK_FORMAT_UNDEFINED && supports(linear)) storage = linear;
-    else if (supports(format)) storage = format;
+        if (linear != VK_FORMAT_UNDEFINED && supports(linear)) storage = linear;
+        else if (supports(format)) storage = format;
 #else
-    if (supports(format)) storage = format;
-    else if (linear != VK_FORMAT_UNDEFINED && supports(linear)) storage = linear;
+        if (supports(format)) storage = format;
+        else if (linear != VK_FORMAT_UNDEFINED && supports(linear)) storage = linear;
 #endif
+    }
     std::lock_guard lock(table.mutex);
     table.formats.emplace(key, storage);
     return storage;

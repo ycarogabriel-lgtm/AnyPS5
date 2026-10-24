@@ -434,10 +434,10 @@ int main() {
         if (device->Target().fragmentBarycentricBuiltins) {
             auto builtin = Draw(*device, Emulation::Geometry, BarycentricPixelCode, perspective, VK_CULL_MODE_NONE, false, VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT, true);
             Require(!builtin.barycentricEmulation.active, "reading PERSP_CENTER I/J with barycentric built-ins needed an emulation stage");
-            const auto builtinSmooth = CheckBarycentrics("PERSP_CENTER I/J from BaryCoordKHR", true);
+            const auto builtinSmooth = CheckBarycentrics(Emulation::Geometry, "PERSP_CENTER I/J from BaryCoordKHR", true);
             builtin = Draw(*device, Emulation::Geometry, BarycentricPixelCode, linear, VK_CULL_MODE_NONE, false, VK_PROVOKING_VERTEX_MODE_FIRST_VERTEX_EXT, true);
             Require(!builtin.barycentricEmulation.active, "reading LINEAR_CENTER I/J with barycentric built-ins needed an emulation stage");
-            const auto builtinLinear = CheckBarycentrics("LINEAR_CENTER I/J from BaryCoordNoPerspKHR", false);
+            const auto builtinLinear = CheckBarycentrics(Emulation::Geometry, "LINEAR_CENTER I/J from BaryCoordNoPerspKHR", false);
             std::printf("barycentric built-in tests passed: %u perspective and %u linear I/J pixels\n", builtinSmooth, builtinLinear);
         }
         const bool geometry = device->GeometryLimits().has_value();
