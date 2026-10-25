@@ -1,3 +1,4 @@
+#include "prx/libSceAgcDriver/State/include/Configuration.hpp"
 #include "prx/libSceAgcDriver/Execution/include/FrameRecorder.hpp"
 #include "prx/libSceAgcDriver/Execution/include/Driver/Driver.hpp"
 #include "prx/libSceAgcDriver/Execution/include/GuestMemory.hpp"
@@ -25,8 +26,6 @@
 #include <unistd.h>
 extern char** environ;
 #endif
-
-extern "C" int APS5_VABI sceAgcDriverGetTFRing(uintptr_t* base, uint32_t* size);
 
 namespace AgcDriver {
 namespace {

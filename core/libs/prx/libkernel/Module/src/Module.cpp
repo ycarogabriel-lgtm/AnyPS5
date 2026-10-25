@@ -1,3 +1,4 @@
+#include "prx/libkernel/include/Api.hpp"
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
@@ -189,13 +190,6 @@ void FillGuestUnwindInfo(std::uint64_t address, ModuleInfoForUnwind* info) {
 }
 }
 #endif
-
-extern "C" {
-void* APS5_VABI dlopen_nid_postfix(const char* path, int flags);
-void* APS5_VABI dlsym_nid_postfix(void* handle, const char* name);
-int APS5_VABI dlclose_nid_postfix(void* handle);
-const char* APS5_VABI sceKernelGetFsSandboxRandomWord();
-}
 
 namespace {
 constexpr int kRtldNow = 2;

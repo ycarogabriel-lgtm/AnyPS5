@@ -1,3 +1,4 @@
+#include "prx/libc/include/Api.hpp"
 #undef NDEBUG
 #include <cassert>
 #include <cstdio>
@@ -121,7 +122,7 @@ void CheckForeign() {
         assert(reason == _URC_FOREIGN_EXCEPTION_CAUGHT); ++foreignDeleted; delete p;
     };
     try {
-        try { _Unwind_RaiseException(exception); assert(false); }
+        try { _Unwind_RaiseException_nid_postfix(exception); assert(false); }
         catch (...) { assert(__cxa_current_primary_exception_nid_postfix() == nullptr); throw; }
     } catch (...) {}
     assert(foreignDeleted == 1);
@@ -156,6 +157,7 @@ void CheckArrays() {
     failArray = true;
     try {
         __cxa_vec_new3_nid_postfix(4, sizeof(int), sizeof(std::size_t), ArrayConstruct, ArrayDestroy, std::malloc, ArrayFree);
+
         assert(false);
     } catch (int value) { assert(value == 73); }
     assert(arrayConstructed == 2 && arrayDestroyed == 2 && arrayFreed == 1);
@@ -163,6 +165,7 @@ void CheckArrays() {
     failArray = false;
     void* array = __cxa_vec_new3_nid_postfix(4, sizeof(int), sizeof(std::size_t), ArrayConstruct, ArrayDestroy, std::malloc, ArrayFree);
     __cxa_vec_delete3_nid_postfix(array, sizeof(int), sizeof(std::size_t), ArrayDestroy, ArrayFree);
+
     assert(arrayConstructed == 4 && arrayDestroyed == 4 && arrayFreed == 1);
 }
 #if defined(__APPLE__)
@@ -542,6 +545,7 @@ int main() {
     try { __cxa_rethrow_primary_exception_nid_postfix(retained); assert(false); }
     catch (int value) { assert(value == 27); }
     __cxa_decrement_exception_refcount_nid_postfix(retained);
+
     {
         auto made = std::make_exception_ptr(Counted());
         try { std::rethrow_exception(made); assert(false); } catch (const Counted&) {}
@@ -585,12 +589,17 @@ int main() {
     catch (const std::bad_optional_access& value) { if (std::strcmp(value.what(), "bad_optional_access") != 0) std::abort(); }
     try { _ZNKSt9exception6_RaiseEv_nid_postfix(nullptr); assert(false); }
     catch (const std::invalid_argument&) {}
-    try { _ZNKSt9exception6_RaiseEv_nid_postfix(&object); assert(false); }
+    LibcException::ExceptionObject exceptionObject {};
+    _ZNSt9exceptionC1Ev_nid_postfix(&exceptionObject);
+    try { _ZNKSt9exception6_RaiseEv_nid_postfix(&exceptionObject); assert(false); }
     catch (const std::exception& value) { assert(std::strcmp(value.what(), "std::exception") == 0); }
+    _ZNSt9exceptionD1Ev_nid_postfix(&exceptionObject);
     try { _ZNKSt8bad_cast8_DoraiseEv_nid_postfix(nullptr); assert(false); }
     catch (const std::invalid_argument&) {}
-    try { _ZNKSt8bad_cast8_DoraiseEv_nid_postfix(&object); assert(false); }
+    _ZNSt8bad_castC1Ev_nid_postfix(&exceptionObject);
+    try { _ZNKSt8bad_cast8_DoraiseEv_nid_postfix(&exceptionObject); assert(false); }
     catch (const std::bad_cast&) {}
+    _ZNSt8bad_castD1Ev_nid_postfix(&exceptionObject);
     CheckRtti();
     CheckForeign();
     CheckStaticInitialization();

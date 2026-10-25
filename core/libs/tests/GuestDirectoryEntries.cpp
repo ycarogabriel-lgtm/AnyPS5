@@ -1,3 +1,6 @@
+#include "prx/libkernel/include/Api.hpp"
+#include "prx/libkernel/File/include/File.hpp"
+#include "prx/libc/include/Api.hpp"
 #include "prx/libc/include/general/VabiMacros.hpp"
 #include "prx/libkernel/File/include/FileFlags.hpp"
 #include <array>
@@ -15,14 +18,11 @@ extern "C" {
 int APS5_VABI sceKernelOpen(const char*, int, std::uint16_t);
 int APS5_VABI sceKernelClose(int);
 std::int64_t APS5_VABI sceKernelRead(int, void*, std::size_t);
-int APS5_VABI sceKernelLseek(int, std::int64_t, int);
 int APS5_VABI sceKernelGetdents(int, char*, int);
 int APS5_VABI sceKernelGetdirentries(int, char*, int, std::int64_t*);
 #ifdef __APPLE__
 int APS5_VABI sceKernelAllocateDirectMemory(std::int64_t, std::int64_t, std::size_t, std::size_t, int, std::int64_t*);
 int APS5_VABI sceKernelMapDirectMemory(void**, std::size_t, int, int, std::int64_t, std::size_t);
-int APS5_VABI sceKernelMprotect(void*, std::size_t, int);
-int APS5_VABI sceKernelMunmap(void*, std::size_t);
 int APS5_VABI sceKernelReleaseDirectMemory(std::int64_t, std::size_t);
 #endif
 int APS5_VABI getdents_nid_postfix(int, char*, int);
@@ -146,7 +146,7 @@ int main() {
     Require(sceKernelGetdirentries(12345, static_cast<char*>(mapping), 4096, &posixBase) == ErrorEbadf);
     Require(sceKernelGetdirentries(directory, large.data(), static_cast<int>(large.size()), static_cast<std::int64_t*>(mapping)) == ErrorEfault);
     Require(sceKernelMprotect(mapping, page, 3) == 0);
-    Require(sceKernelMunmap(mapping, page) == 0);
+    Require(sceKernelMunmap(reinterpret_cast<std::uint64_t>(mapping), page) == 0);
     Require(sceKernelReleaseDirectMemory(physical, page) == 0);
 #endif
     Require(sceKernelClose(directory) == 0);

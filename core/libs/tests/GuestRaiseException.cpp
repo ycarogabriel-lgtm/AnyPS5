@@ -1,3 +1,8 @@
+#include "prx/libkernel/KernelErrors.hpp"
+#include "prx/libkernel/include/Api.hpp"
+#include "prx/libkernel/Semaphore/include/Semaphore.hpp"
+#include "prx/libkernel/Pthread/include/Rwlock.hpp"
+#include "prx/libkernel/Pthread/include/Mutex.hpp"
 #include "SceTypes.hpp"
 #include "prx/libc/include/general/AsmMacros.hpp"
 #include <atomic>
@@ -38,9 +43,6 @@ int APS5_VABI sceKernelSyncOnAddressWait(std::uint32_t* address, std::uint32_t e
 int APS5_VABI sceKernelSyncOnAddressWake(void* address, std::int32_t count);
 }
 
-static constexpr int SCE_KERNEL_ERROR_EINVAL = static_cast<int>(0x80020016);
-static constexpr int SCE_KERNEL_ERROR_ESRCH = static_cast<int>(0x80020003);
-static constexpr int SCE_KERNEL_ERROR_ETIMEDOUT = static_cast<int>(0x8002003c);
 static constexpr int GuestSigUsr1 = 30;
 static constexpr int Repeats = 100;
 static constexpr std::size_t R12Offset = 0xa0;
