@@ -554,7 +554,7 @@ static void CheckDirectMemoryBecomesExecutable() {
     Require(sceKernelMprotect(mapped, page, 7) == 0);
     static_cast<unsigned char*>(mapped)[1] = 0x2b;
     Require(reinterpret_cast<int (*)()>(mapped)() == 43);
-    Require(sceKernelMunmap(mapped, page) == 0);
+    Require(sceKernelMunmap(reinterpret_cast<std::uint64_t>(mapped), page) == 0);
     Require(sceKernelReleaseDirectMemory(phys, page) == 0);
 }
 
@@ -568,7 +568,7 @@ static void CheckDirectMemoryReleasesHostDescriptors() {
         Require(sceKernelAllocateDirectMemory(0, 0x7fffffffffll, page, 0, 0, &phys) == 0);
         void* mapped = nullptr;
         Require(sceKernelMapDirectMemory(&mapped, page, 3, 0, phys, 0) == 0);
-        Require(sceKernelMunmap(mapped, page) == 0);
+        Require(sceKernelMunmap(reinterpret_cast<std::uint64_t>(mapped), page) == 0);
         Require(sceKernelReleaseDirectMemory(phys, page) == 0);
     }
     const int after = dup(0);
