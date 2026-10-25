@@ -62,7 +62,7 @@ void FillEhFrame(const dl_phdr_info& image, ModuleInfoForUnwind* info) {
     record += 4 + length;
   }
   info->eh_frame_addr = frames;
-  info->eh_frame_size = record - frames;
+  info->eh_frame_size = record - frames + 4;
 }
 }
 #endif
@@ -151,8 +151,6 @@ extern "C" void ForgetUnloadedUnwindImages_nid_no_patch() {
   for (const auto base : unloaded) UnwindImages().erase(base);
 }
 #else
-extern "C" int APS5_VABI sceKernelGetModuleInfoFromAddr(std::uint64_t address, int flags, ModuleInfoEx* info);
-
 namespace {
 struct ImageSearch {
   std::uint64_t address;
@@ -274,7 +272,6 @@ int APS5_VABI sceKernelGetModuleInfoForUnwind(uint64_t addr, int flags, ModuleIn
     return 1;
   }, &search);
   if (search.found) {
-    if (IsRelinkedImage(addr)) FillGuestUnwindInfo(addr, info);
     return 0;
   }
   Dl_info image {};

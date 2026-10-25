@@ -1,4 +1,5 @@
 #include "prx/libc/include/ApplicationHeap.hpp"
+#include "prx/libc/include/Api.hpp"
 #include "prx/libc/include/general/VabiMacros.hpp"
 #include <array>
 #include <cstddef>
@@ -6,21 +7,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <net/if.h>
-
-struct GuestInterfaceAddress {
-    GuestInterfaceAddress* next;
-    char* name;
-    std::uint32_t flags;
-    void* address;
-    void* netmask;
-    void* destination;
-    void* data;
-};
-
-extern "C" {
-int APS5_VABI getifaddrs_nid_postfix(GuestInterfaceAddress** list);
-void APS5_VABI freeifaddrs_nid_postfix(GuestInterfaceAddress* list);
-}
 
 static void Require(bool value) { if (!value) std::abort(); }
 

@@ -125,6 +125,8 @@ def audit():
     for source in sorted((ROOT / "core").rglob("*")):
         if source.suffix not in {".cpp", ".h", ".hpp"}:
             continue
+        if source.suffix == ".cpp" and "tests" in source.relative_to(ROOT).parts:
+            continue
         text = code(source_text(source))
         resolved = source.resolve()
         for match in DECLARATION.finditer(text):

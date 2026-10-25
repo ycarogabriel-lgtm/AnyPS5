@@ -24,6 +24,7 @@
 #else
 #include <dlfcn.h>
 #ifdef __APPLE__
+#include "prx/libc/include/specifics/linux/ElfTypes.hpp"
 #include <mach-o/dyld.h>
 #include <mach-o/getsect.h>
 #include <mach-o/loader.h>
@@ -84,6 +85,25 @@ struct MachImage {
     std::uintptr_t slide;
     const char* path;
 };
+
+std::uint32_t GuestEhHeaderSize(std::uintptr_t address) {
+    struct Search { std::uintptr_t address; std::uint32_t size = 0; } search{address};
+    dl_iterate_phdr([](dl_phdr_info* image, std::size_t, void* data) {
+        auto& search = *static_cast<Search*>(data);
+        bool contains = false;
+        std::uint64_t size = 0;
+        for (std::uint16_t index = 0; index < image->dlpi_phnum; ++index) {
+            const auto& header = image->dlpi_phdr[index];
+            const auto start = image->dlpi_addr + header.p_vaddr;
+            if (header.p_type == PT_LOAD && search.address >= start && search.address - start < header.p_memsz) contains = true;
+            if (header.p_type == PT_GNU_EH_FRAME) size = header.p_memsz;
+        }
+        if (!contains) return 0;
+        search.size = ToU32(size, "eh_frame_hdr size");
+        return 1;
+    }, &search);
+    return search.size;
+}
 
 std::vector<MachImage> MachImages() {
     std::vector<MachImage> images;
@@ -174,10 +194,20 @@ bool Fill(std::uintptr_t address, TInfo& info) {
     if constexpr (Extended<TInfo>) {
         info.id = ModuleIdForImage_nid_no_patch(ImageHandle(*image));
         info.ref_count = 1;
-        unsigned long size = 0;
-        if (const auto* frames = getsectiondata(image->header, SEG_TEXT, "__eh_frame", &size); frames && size != 0) {
-            info.eh_frame_addr = reinterpret_cast<std::uintptr_t>(frames);
-            info.eh_frame_size = ToU32(size, "eh_frame size");
+        if (relinked) {
+            ModuleInfoForUnwind unwind{};
+            if (sceKernelGetModuleInfoForUnwind(address, 0, &unwind) == 0) {
+                info.eh_frame_hdr_addr = unwind.eh_frame_hdr_addr;
+                info.eh_frame_hdr_size = GuestEhHeaderSize(address);
+                info.eh_frame_addr = unwind.eh_frame_addr;
+                info.eh_frame_size = ToU32(unwind.eh_frame_size, "eh_frame size");
+            }
+        } else {
+            unsigned long size = 0;
+            if (const auto* frames = getsectiondata(image->header, SEG_TEXT, "__eh_frame", &size); frames && size != 0) {
+                info.eh_frame_addr = reinterpret_cast<std::uintptr_t>(frames);
+                info.eh_frame_size = ToU32(size, "eh_frame size");
+            }
         }
     }
     return true;

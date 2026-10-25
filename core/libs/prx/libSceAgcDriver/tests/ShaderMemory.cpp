@@ -5501,7 +5501,7 @@ void verifyPixelRequestSerialization() {
     minimal.context.pixel->layerExported = true;
     minimal.context.pixel->ditheredAlphaToCoverage = true;
     const auto encoded = serializer.Serialize(minimal);
-    require(requestPrefix(encoded, 8u) == "NVNQQS4AAAA=", "new requests did not use serialization version 46");
+    require(requestPrefix(encoded, 8u) == "NVNQQS8AAAA=", "new requests did not use serialization version 47");
     const std::array<std::uint32_t, 2> fallbacks{0x40u, 0x1ac4u};
     auto withFallbacks = minimal;
     withFallbacks.context.linkedCallFallbacks = fallbacks;
@@ -5619,7 +5619,7 @@ void verifyPixelRequestSerialization() {
     for (std::size_t bytes = 0; bytes < 45u; ++bytes) {
         expectFailure([&] { static_cast<void>(serializer.Deserialize(requestPrefix(encoded, mappingOffset + bytes))); }, "truncated data", "a truncated pixel mapping, packing, dual-source, alpha-to-coverage, stencil reference export flag, primitive class, layer export, dither or front-face flag, quad pixel mask or quad sample mask was accepted");
     }
-    for (const auto unsupported : {"NVNQQQAAAAA=", "NVNQQS8AAAA="}) {
+    for (const auto unsupported : {"NVNQQQAAAAA=", "NVNQQTAAAAA="}) {
         expectFailure([&] { static_cast<void>(serializer.Deserialize(unsupported)); }, "serialization version", "an unsupported request version was accepted");
     }
     static constexpr std::string_view version18Request{
@@ -5710,6 +5710,7 @@ void verifyVertexInfoVersion19() {
     require(offset + 4u <= plain.size() && flagged[offset] == 0xefu && flagged[offset + 1u] == 0xcdu && flagged[offset + 2u] == 0xabu && flagged[offset + 3u] == 0x89u, "PA_CL_VS_OUT_CNTL is not the four bytes the version 20 vertex info adds");
     require(std::equal(plain.begin() + offset + 4u, plain.end(), flagged.begin() + offset + 4u), "PA_CL_VS_OUT_CNTL moved the fields after it");
     auto version20Vertex = flagged;
+    version20Vertex.pop_back(); // Version 47 fragment barycentric flag.
     version20Vertex.resize(version20Vertex.size() - sizeof(std::uint32_t));
     version20Vertex.pop_back();
     version20Vertex.pop_back();
@@ -5723,6 +5724,7 @@ void verifyVertexInfoVersion19() {
     const auto layered = serializer.Deserialize(serializer.Serialize(vertex));
     require(layered.request.context.vertex.has_value() && layered.request.context.vertex->paClVsOutCntl == vertex.context.vertex->paClVsOutCntl, "a layered vertex info lost its clip distances or render target index");
     auto legacy = plain;
+    legacy.pop_back(); // Version 47 fragment barycentric flag.
     legacy.resize(legacy.size() - sizeof(std::uint32_t));
     legacy.pop_back();
     legacy.pop_back();
@@ -5778,7 +5780,7 @@ void verifyVertexInfoVersion19() {
     const auto version43Bytes = [&](std::vector<std::uint8_t> bytes) {
         require(bytes.end() - bytes.begin() > mergeOffset + static_cast<std::ptrdiff_t>(mergeBytes) && std::equal(plainPixel.begin() + mergeOffset, plainPixel.begin() + mergeOffset + static_cast<std::ptrdiff_t>(mergeBytes), bytes.begin() + mergeOffset), "a replay fixture does not hold the default color target merge after the sample order");
         bytes.erase(bytes.begin() + mergeOffset, bytes.begin() + mergeOffset + static_cast<std::ptrdiff_t>(mergeBytes));
-        bytes.resize(bytes.size() - sizeof(std::uint32_t) - 2u);
+        bytes.resize(bytes.size() - sizeof(std::uint32_t) - 3u);
         return bytes;
     };
     auto version42 = version43Bytes(plainPixel);
@@ -5867,15 +5869,21 @@ void verifyVertexInfoVersion19() {
     auto stencilPixel = sampledPixel;
     stencilPixel.context.pixel->stencilOperationValueExport = true;
     auto version37 = decodeBase64(serializer.Serialize(stencilPixel));
-    version37.resize(version37.size() - 2u);
+    version37.resize(version37.size() - 8u);
+    version37.erase(version37.begin() + static_cast<std::ptrdiff_t>(orderOffset),
+        version37.begin() + static_cast<std::ptrdiff_t>(mergeOffset + mergeBytes));
     version37[4] = 37u;
     const auto replay37 = serializer.Deserialize(encodeBase64(version37));
     require(replay37.request.context.pixel.has_value() && replay37.request.context.pixel->stencilOperationValueExport && !replay37.request.target.fragmentBarycentricBuiltins && !replay37.request.target.fusedExactArithmetic, "a version 37 stencil export request was not preserved");
     auto legacy38 = sampledPixel;
     legacy38.target.fragmentBarycentricBuiltins = true;
     legacy38.target.fusedExactArithmetic = true;
-    auto version38 = decodeBase64(serializer.Serialize(legacy38));
-    version38.erase(version38.begin() + static_cast<std::ptrdiff_t>(maskOffset + 1u + sampleMaskBytes + 4u + iterationBytes - 1u));
+    auto version38 = version43Bytes(decodeBase64(serializer.Serialize(legacy38)));
+    version38.erase(version38.begin() + static_cast<std::ptrdiff_t>(orderOffset),
+        version38.begin() + static_cast<std::ptrdiff_t>(orderOffset + sampleOrderBytes));
+    version38.pop_back(); // Version 41 float32-denormal flag.
+    version38.push_back(1u);
+    version38.push_back(1u);
     version38[4] = 38u;
     const auto replay38 = serializer.Deserialize(encodeBase64(version38));
     require(replay38.request.context.pixel.has_value() && !replay38.request.context.pixel->stencilOperationValueExport && replay38.request.target.fragmentBarycentricBuiltins && replay38.request.target.fusedExactArithmetic, "a version 38 macOS request lost its target flags");
@@ -5955,9 +5963,17 @@ void verifyDepthRemapRequests() {
     const auto plainBytes = decodeBase64(plain);
     const auto remappedBytes = decodeBase64(remapped);
     constexpr std::size_t pointTailBytes = 13u;
-    require(plainBytes.size() == remappedBytes.size() && plainBytes.size() > 13u + pointTailBytes && std::equal(plainBytes.begin(), plainBytes.end() - 13 - pointTailBytes, remappedBytes.begin()) && std::equal(plainBytes.end() - 6 - pointTailBytes, plainBytes.end(), remappedBytes.end() - 6 - pointTailBytes), "the depth remap flag and mode are not the 6 bytes before the f32 flush and denormal preserve flags, the point tail, the fused arithmetic flag, the pixel function LDS flag and the pixel function storage size of a vertex request");
+    constexpr std::size_t trailingTargetBytes = 2u + pointTailBytes + 1u + 5u + 1u;
+    const auto depthOffset = plainBytes.size() - trailingTargetBytes - 5u;
+    require(plainBytes.size() == remappedBytes.size() && plainBytes.size() > trailingTargetBytes + 5u &&
+        std::equal(plainBytes.begin(), plainBytes.begin() + static_cast<std::ptrdiff_t>(depthOffset), remappedBytes.begin()) &&
+        remappedBytes[depthOffset] == 1u && remappedBytes[depthOffset + 1u] == 2u &&
+        std::equal(plainBytes.begin() + static_cast<std::ptrdiff_t>(depthOffset + 5u), plainBytes.end(),
+            remappedBytes.begin() + static_cast<std::ptrdiff_t>(depthOffset + 5u)),
+        "the depth remap flag and mode moved within the vertex request");
     for (const std::uint8_t legacyVersion : {32u, 34u}) {
         auto legacyBytes = remappedBytes;
+        legacyBytes.pop_back(); // Version 47 fragment barycentric flag.
         legacyBytes.resize(legacyBytes.size() - sizeof(std::uint32_t));
         legacyBytes.pop_back();
         legacyBytes.pop_back();
@@ -5969,6 +5985,7 @@ void verifyDepthRemapRequests() {
         require(serializer.Serialize(legacy.request) == plain, ("a version " + std::to_string(legacyVersion) + " vertex request misread the fields before the depth remap").c_str());
     }
     auto version35 = remappedBytes;
+    version35.pop_back(); // Version 47 fragment barycentric flag.
     version35.resize(version35.size() - sizeof(std::uint32_t));
     version35.pop_back();
     version35.pop_back();
@@ -6020,7 +6037,8 @@ void verifyMergedHullConfiguration() {
     require(!serializer.Deserialize(separate).request.graphics->tessellation->mergedHull, "a separate hull configuration was read as merged");
     constexpr std::size_t pointTailBytes = 13u;
     auto legacy = decodeBase64(merged);
-    require(legacy.size() > 54u + pointTailBytes && legacy[4] == 46u, "a merged hull request did not use serialization version 46");
+    legacy.pop_back(); // Version 47 fragment barycentric flag.
+    require(legacy.size() > 54u + pointTailBytes && legacy[4] == 47u, "a merged hull request did not use serialization version 47");
     legacy.resize(legacy.size() - sizeof(std::uint32_t) - 2u - pointTailBytes);
     legacy.pop_back();
     require(legacy[legacy.size() - 52u] == 1u, "the merged hull flag is not the last byte of the tessellation configuration");
